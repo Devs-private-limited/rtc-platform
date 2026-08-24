@@ -1,0 +1,20 @@
+{
+  "name": "rtc-platform",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n signal,sfu,demo -c cyan,yellow,magenta \"npm run dev -w @rtc/signaling\" \"npm run dev -w @rtc/media-sfu\" \"npm run dev -w @rtc/demo\"",
+    "dev:infra": "docker compose up -d postgres redis coturn",
+    "dev:signaling": "npm run dev -w @rtc/signaling",
+    "dev:demo": "npm run dev -w @rtc/demo",
+    "dev:sfu": "npm run dev -w @rtc/media-sfu",
+    "build": "npm run build -w @rtc/protocol && npm run build -w @rtc/sdk && npm run build -w @rtc/signaling && npm run build -w @rtc/media-sfu",
+    "build:sdk": "npm run build -w @rtc/sdk"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  }
+}

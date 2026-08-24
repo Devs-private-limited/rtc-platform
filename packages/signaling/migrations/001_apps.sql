@@ -1,0 +1,12 @@
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+CREATE TABLE IF NOT EXISTS apps (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  app_id VARCHAR(64) UNIQUE NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  secret_hash TEXT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_apps_app_id ON apps(app_id);

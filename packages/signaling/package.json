@@ -1,0 +1,31 @@
+{
+  "name": "@rtc/signaling",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@rtc/protocol": "*",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1",
+    "@fastify/cors": "^10.0.2",
+    "jsonwebtoken": "^9.0.2",
+    "ioredis": "^5.4.2",
+    "bcryptjs": "^2.4.3",
+    "pg": "^8.13.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.11",
+    "@types/ws": "^8.5.14",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

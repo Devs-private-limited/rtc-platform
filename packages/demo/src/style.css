@@ -1,0 +1,157 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "DM Sans", system-ui, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+  min-height: 100dvh;
+}
+
+#app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 16px 32px;
+}
+
+header {
+  margin-bottom: 20px;
+}
+
+header h1 {
+  font-size: clamp(1.5rem, 5vw, 2rem);
+  margin-bottom: 6px;
+}
+
+header p {
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.panel {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panel h2 {
+  font-size: 1.1rem;
+}
+
+.status {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+input,
+button {
+  font: inherit;
+}
+
+input {
+  flex: 1;
+  min-width: 120px;
+  border: 1px solid #475569;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #6366f1;
+  color: #fff;
+}
+
+button.secondary {
+  background: #334155;
+}
+
+button.danger {
+  background: #ef4444;
+}
+
+button.success {
+  background: #22c55e;
+  color: #052e16;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.messages {
+  min-height: 180px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: #0f172a;
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.msg {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #1e293b;
+}
+
+.msg.self {
+  background: #312e81;
+}
+
+.call-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mode-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: #94a3b8;
+  flex: 1;
+}
+
+.mode-label select {
+  border: 1px solid #475569;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+  font-size: 0.78rem;
+  color: #64748b;
+  min-height: 1.2em;
+}

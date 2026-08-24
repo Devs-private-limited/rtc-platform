@@ -1,0 +1,35 @@
+{
+  "name": "@rtc/sdk",
+  "version": "0.1.0",
+  "description": "Embeddable WebRTC SDK for 1:1 chat and voice calls",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["webrtc", "rtc", "voice", "chat", "sdk"],
+  "license": "MIT",
+  "dependencies": {
+    "@rtc/protocol": "0.1.0",
+    "mediasoup-client": "^3.7.16"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
