@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RTC Platform — Product & Technical Overview</title>
+  <style>
+    :root {
+      --text: #1a1a2e;
+      --muted: #5c5c7a;
+      --accent: #2563eb;
+      --border: #e2e8f0;
+      --bg: #ffffff;
+      --code-bg: #f1f5f9;
+      --table-head: #f8fafc;
+    }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    line-height: 1.65;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 48px 40px;
+    font-size: 15px;
+  }
+  h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0 0 8px;
+    color: var(--text);
+    border-bottom: 3px solid var(--accent);
+    padding-bottom: 12px;
+  }
+  h2 {
+    font-size: 1.35rem;
+    margin: 40px 0 16px;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+  }
+  h3 {
+    font-size: 1.1rem;
+    margin: 24px 0 10px;
+    color: var(--text);
+  }
+  p { margin: 0 0 12px; }
+  .meta {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-bottom: 32px;
+  }
+  .meta span { margin-right: 20px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 24px;
+    font-size: 0.92rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    text-align: left;
+  }
+  th { background: var(--table-head); font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin: 16px 0;
+  }
+  code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.88em;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  pre code { background: none; padding: 0; }
+  .diagram {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+    font-family: Consolas, monospace;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    white-space: pre;
+    overflow-x: auto;
+    margin: 16px 0;
+  }
+  ul { margin: 8px 0 16px; padding-left: 24px; }
+  li { margin-bottom: 6px; }
+  .badge {
+    display: inline-block;
+    background: #dcfce7;
+    color: #166534;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .badge-next {
+    background: #fef3c7;
+    color: #92400e;
+  }
+  .summary-box {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 24px 0;
+  }
+  .summary-box strong { color: var(--accent); }
+  .footer {
+    margin-top: 48px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  @media print {
+    body { padding: 24px; font-size: 13px; }
+    h2 { page-break-after: avoid; }
+    pre, .diagram, table { page-break-inside: avoid; }
+  }
+  </style>
+</head>
+<body>
+
+<h1>RTC Platform</h1>
+<p style="font-size:1.15rem;font-weight:600;margin-bottom:4px;">Product & Technical Overview</p>
+<div class="meta">
+  <span><strong>Version:</strong> 1.0</span>
+  <span><strong>Date:</strong> August 2026</span>
+  <span><strong>Status:</strong> <span class="badge">Core platform complete</span></span>
+</div>
+
+<div class="summary-box">
+  <p><strong>RTC Platform</strong> is an embeddable real-time communication service inspired by Zego and Agora. Any product can add <strong>1:1 chat</strong>, <strong>voice calls</strong>, and <strong>group voice</strong> by integrating a single JavaScript SDK — without building WebRTC infrastructure from scratch.</p>
+</div>
+
+<h2>1. Executive Summary</h2>
+<p>Customers integrate <code>@rtc/sdk</code> into their web or mobile apps. The platform handles signaling, authentication, room management, media routing (P2P or SFU), and TURN relay for cross-network connectivity.</p>
+
+<h3>What is built today</h3>
+<ul>
+  <li>Signaling server (WebSocket + REST) with multi-tenant app registry</li>
+  <li>mediasoup SFU for 1:1 and group voice</li>
+  <li>Publishable SDK (ESM + CJS + TypeScript types)</li>
+  <li>Live two-panel demo application</li>
+  <li>Redis-backed signaling scale-out</li>
+  <li>PostgreSQL app credentials store</li>
+  <li>coturn TURN server for NAT traversal</li>
+</ul>
+
+<h2>2. Vision — What We Want to Build</h2>
+
+<h3>2.1 Problem</h3>
+<p>Building real-time voice and chat in-house requires WebRTC expertise, signaling, media servers, TURN relays, auth, scaling, and maintenance. Most teams want to <em>add a voice room in a day</em> — not a six-month RTC project.</p>
+
+<h3>2.2 Solution</h3>
+<table>
+  <tr><th>Capability</th><th>Description</th></tr>
+  <tr><td>1:1 text chat</td><td>Room-based messaging between users in the same session</td></tr>
+  <tr><td>1:1 voice calls</td><td>Direct P2P or SFU-mediated audio between two users</td></tr>
+  <tr><td>Group voice</td><td>Multiple users hear each other via mediasoup SFU</td></tr>
+  <tr><td>Embeddable SDK</td><td>Simple API: init, joinRoom, sendMessage, callUser, joinVoiceRoom</td></tr>
+  <tr><td>Multi-tenant apps</td><td>Each customer gets App ID + Secret (like Zego App Sign)</td></tr>
+  <tr><td>Secure tokens</td><td>Server-side token issuance; secrets never on the client</td></tr>
+  <tr><td>Scalable signaling</td><td>Redis pub/sub for multi-instance WebSocket servers</td></tr>
+  <tr><td>NAT traversal</td><td>STUN + TURN configuration served to clients automatically</td></tr>
+</table>
+
+<h3>2.3 Target Users</h3>
+<ul>
+  <li><strong>Product teams</strong> embedding voice/chat into support, telehealth, gaming, or collaboration apps</li>
+  <li><strong>Platform operators</strong> running the RTC backend for multiple customer apps</li>
+  <li><strong>Developers</strong> evaluating RTC with a runnable demo and clear integration path</li>
+</ul>
+
+<h2>3. How It Works</h2>
+
+<h3>3.1 Architecture</h3>
+<div class="diagram">┌─────────────────────────────────────────────────────────────┐
+│              Customer Application (@rtc/sdk)                 │
+│  init → joinRoom → sendMessage → callUser → joinVoiceRoom    │
+└──────────────┬────────────────────────┬────────────────────┘
+               │ WebSocket (signaling)    │ WebRTC (audio)
+               ▼                          ▼
+┌──────────────────────┐      ┌─────────────────────────────┐
+│  Signaling Server    │      │  Media Path                 │
+│  Chat, calls, relay  │      │  P2P direct  OR  mediasoup  │
+└──────┬───────┬───────┘      └──────────────┬──────────────┘
+       │       │                             │
+       ▼       ▼                             ▼
+  PostgreSQL  Redis                    mediasoup SFU
+  (apps)      (rooms)                  + coturn (TURN)</div>
+
+<h3>3.2 End-to-End User Journey</h3>
+<table>
+  <tr><th>Step</th><th>Action</th><th>Details</th></tr>
+  <tr><td>1</td><td>Backend auth</td><td>Server calls POST /v1/token with appId + appSecret + userId</td></tr>
+  <tr><td>2</td><td>SDK init</td><td>Client loads config (ICE, SFU URL), opens WebSocket</td></tr>
+  <tr><td>3</td><td>Join room</td><td>Both users join same roomId; presence tracked in Redis</td></tr>
+  <tr><td>4</td><td>Chat</td><td>Messages relayed via signaling — no media server</td></tr>
+  <tr><td>5</td><td>1:1 voice</td><td>P2P WebRTC or SFU audio depending on mediaMode</td></tr>
+  <tr><td>6</td><td>Group voice</td><td>All room members connect through SFU</td></tr>
+</table>
+
+<h3>3.3 Media Modes</h3>
+<table>
+  <tr><th>Mode</th><th>Behavior</th></tr>
+  <tr><td><code>auto</code></td><td>Default — SFU when available, else P2P</td></tr>
+  <tr><td><code>sfu</code></td><td>Always mediasoup; falls back to P2P if SFU offline</td></tr>
+  <tr><td><code>p2p</code></td><td>Direct WebRTC between peers</td></tr>
+</table>
+
+<h2>4. Platform Components</h2>
+
+<table>
+  <tr><th>Package</th><th>Role</th><th>Port</th></tr>
+  <tr><td><code>@rtc/protocol</code></td><td>Shared message types</td><td>—</td></tr>
+  <tr><td><code>@rtc/signaling</code></td><td>WebSocket + REST + app registry</td><td>4000</td></tr>
+  <tr><td><code>@rtc/media-sfu</code></td><td>mediasoup SFU service</td><td>4100</td></tr>
+  <tr><td><code>@rtc/sdk</code></td><td>Customer embeddable library</td><td>—</td></tr>
+  <tr><td><code>@rtc/demo</code></td><td>Two-panel integration demo</td><td>5180</td></tr>
+</table>
+
+<h3>SDK API (RTCExpress)</h3>
+<table>
+  <tr><th>Method</th><th>Description</th></tr>
+  <tr><td><code>init(options)</code></td><td>Connect and load platform config</td></tr>
+  <tr><td><code>joinRoom(roomId)</code></td><td>Join a chat/voice room</td></tr>
+  <tr><td><code>sendMessage(text)</code></td><td>Send room message</td></tr>
+  <tr><td><code>callUser(userId)</code></td><td>Start 1:1 voice call</td></tr>
+  <tr><td><code>acceptCall() / rejectCall() / endCall()</code></td><td>Call lifecycle</td></tr>
+  <tr><td><code>muteMicrophone(muted)</code></td><td>Toggle mic</td></tr>
+  <tr><td><code>joinVoiceRoom() / leaveVoiceRoom()</code></td><td>Group voice via SFU</td></tr>
+  <tr><td><code>getMediaMode()</code></td><td>Returns "p2p" or "sfu"</td></tr>
+</table>
+
+<h3>SDK Events</h3>
+<table>
+  <tr><th>Event</th><th>When</th></tr>
+  <tr><td><code>connected</code></td><td>WebSocket connected</td></tr>
+  <tr><td><code>message</code></td><td>Room chat message received</td></tr>
+  <tr><td><code>callInvite</code></td><td>Incoming voice call</td></tr>
+  <tr><td><code>callState</code></td><td>Call ringing / connected / ended</td></tr>
+  <tr><td><code>voiceRoomJoined</code></td><td>Group voice active</td></tr>
+  <tr><td><code>userJoined / userLeft</code></td><td>Room presence changes</td></tr>
+  <tr><td><code>error</code></td><td>Error from server</td></tr>
+</table>
+
+<h2>5. API Summary</h2>
+<table>
+  <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+  <tr><td>/v1/token</td><td>POST</td><td>Issue user JWT</td></tr>
+  <tr><td>/v1/config</td><td>GET</td><td>ICE, SFU URL, feature flags</td></tr>
+  <tr><td>/ws?token=</td><td>WebSocket</td><td>Real-time signaling</td></tr>
+  <tr><td>/v1/admin/apps</td><td>POST/GET</td><td>Register/list customer apps (admin key)</td></tr>
+  <tr><td>/v1/rooms/:id/join</td><td>POST</td><td>Join SFU media room</td></tr>
+</table>
+
+<h2>6. Security Model</h2>
+<ul>
+  <li><strong>App Secret</strong> — bcrypt-hashed in PostgreSQL; server-side only</li>
+  <li><strong>User Token</strong> — Short-lived JWT (appId + userId)</li>
+  <li><strong>WebSocket</strong> — Requires valid token; actions tied to authenticated user</li>
+  <li><strong>Admin API</strong> — Separate ADMIN_API_KEY for app registration</li>
+</ul>
+
+<h2>7. Running Locally</h2>
+<pre><code>cd rtc-platform
+npm install
+npm run dev:infra          # postgres, redis, coturn
+cp packages/signaling/.env.example packages/signaling/.env
+npm run dev                # signaling + SFU + demo</code></pre>
+
+<table>
+  <tr><th>Service</th><th>URL</th></tr>
+  <tr><td>Signaling</td><td>http://localhost:4000</td></tr>
+  <tr><td>SFU</td><td>http://localhost:4100</td></tr>
+  <tr><td>Demo</td><td>http://localhost:5180</td></tr>
+</table>
+
+<h3>Demo Walkthrough</h3>
+<ol>
+  <li>Open demo in two browser tabs</li>
+  <li>User A = <code>user_a</code>, User B = <code>user_b</code>, same room <code>room-1</code></li>
+  <li>Connect → Join room on both</li>
+  <li>Send chat messages</li>
+  <li>1:1 Call — enter peer ID, accept on other side</li>
+  <li>Join group voice — all members hear each other</li>
+</ol>
+
+<h3>Demo Credentials</h3>
+<table>
+  <tr><th>Key</th><th>Value</th></tr>
+  <tr><td>App ID</td><td>demo-app</td></tr>
+  <tr><td>App Secret</td><td>demo-secret</td></tr>
+  <tr><td>Admin API Key</td><td>dev-admin-key</td></tr>
+</table>
+
+<h2>8. Integration Example</h2>
+<pre><code>import { RTCExpress } from "@rtc/sdk";
+
+// Server-side only
+const { token } = await RTCExpress.fetchToken("https://signal.example.com", {
+  appId: "your-app-id",
+  appSecret: process.env.RTC_APP_SECRET,
+  userId: "user_123",
+});
+
+// Client-side
+const rtc = new RTCExpress();
+await rtc.init({
+  serverUrl: "https://signal.example.com",
+  appId: "your-app-id",
+  userId: "user_123",
+  token,
+  mediaMode: "auto",
+});
+
+rtc.on("message", ({ fromUserId, text }) => console.log(fromUserId, text));
+rtc.on("callInvite", ({ fromUserId }) => showIncomingCallUI(fromUserId));
+
+await rtc.joinRoom("support-42");
+rtc.sendMessage("Hello!");
+await rtc.callUser("agent_7");
+await rtc.joinVoiceRoom();</code></pre>
+
+<h2>9. Roadmap</h2>
+
+<h3>Completed <span class="badge">Done</span></h3>
+<table>
+  <tr><th>Phase</th><th>Deliverable</th></tr>
+  <tr><td>Phase 1</td><td>P2P chat + 1:1 voice</td></tr>
+  <tr><td>Phase 2</td><td>Redis multi-node signaling</td></tr>
+  <tr><td>Phase 3</td><td>TURN + ICE API, PostgreSQL app registry, admin API</td></tr>
+  <tr><td>Phase 4</td><td>mediasoup SFU, SDK SFU path, group voice</td></tr>
+</table>
+
+<h3>Next <span class="badge badge-next">Planned</span></h3>
+<ul>
+  <li>npm publish of @rtc/sdk</li>
+  <li>Production hardening (TLS, health checks, secret rotation)</li>
+  <li>Video through SFU</li>
+  <li>Mobile SDKs (React Native / Flutter)</li>
+  <li>Usage analytics and billing</li>
+  <li>Kubernetes deployment</li>
+</ul>
+
+<h2>10. Expected Final Product</h2>
+<p>When fully deployed, customers sign up, receive App ID + Secret, add the SDK to their frontend, and add one backend endpoint to mint tokens. Users get chat and voice in minutes.</p>
+
+<div class="diagram">Customer Backend ──► RTC Signaling Cloud ──► Users (SDK)
+        │                      │
+   Token API only          Signaling cluster (Redis)
+   (appSecret safe)        SFU cluster (mediasoup)
+                            TURN cluster (coturn)</div>
+
+<h2>11. Production Requirements</h2>
+<table>
+  <tr><th>Requirement</th><th>Notes</th></tr>
+  <tr><td>HTTPS</td><td>Required for getUserMedia (except localhost)</td></tr>
+  <tr><td>Public IP / TURN</td><td>Required for users behind strict NAT</td></tr>
+  <tr><td>UDP ports</td><td>SFU uses 40000–40100 (configurable)</td></tr>
+  <tr><td>PostgreSQL</td><td>Multi-tenant app registry</td></tr>
+  <tr><td>Redis</td><td>Multi-instance signaling</td></tr>
+</table>
+
+<div class="footer">
+  <p><strong>RTC Platform</strong> — Embeddable real-time communication platform (Zego-style SDK + hosted backend)</p>
+  <p>Repository: <a href="https://github.com/Ajay-Devarasetty/rtc-platform">github.com/Ajay-Devarasetty/rtc-platform</a> · Packages: @rtc/sdk, @rtc/signaling, @rtc/media-sfu, @rtc/protocol</p>
+</div>
+
+</body>
+</html>
