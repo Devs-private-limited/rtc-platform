@@ -1,5 +1,5 @@
 import type { WebSocket } from "ws";
-import type Redis from "ioredis";
+import type { Redis } from "ioredis";
 import type { ServerMessage } from "@rtc/protocol";
 import type { PresenceStore } from "./store/types.js";
 import { RELAY_CHANNEL } from "./store/redis.js";
@@ -23,7 +23,7 @@ export class MessageRelay {
   async start() {
     if (!this.subscriber) return;
     await this.subscriber.subscribe(RELAY_CHANNEL);
-    this.subscriber.on("message", (channel, raw) => {
+    this.subscriber.on("message", (channel: string, raw: string) => {
       if (channel !== RELAY_CHANNEL) return;
       try {
         const data = JSON.parse(raw) as RelayMessage;
@@ -57,5 +57,11 @@ export class MessageRelay {
     }
 
     return false;
+  }
+
+  async stop() {
+    if (this.subscriber) {
+      await this.subscriber.unsubscribe(RELAY_CHANNEL);
+    }
   }
 }

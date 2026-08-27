@@ -2,14 +2,26 @@ import "dotenv/config";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { SfuManager } from "./sfu.js";
+import { loadSfuEnv } from "./env.js";
 
-const PORT = Number(process.env.PORT || 4100);
-const sfu = new SfuManager();
+const env = loadSfuEnv();
+const sfu = new SfuManager(env.announcedIp);
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
 
-app.get("/health", async () => ({ ok: true, service: "rtc-media-sfu" }));
+app.get("/health", async () => ({
+  ok: true,
+  service: "rtc-media-sfu",
+  uptime: process.uptime(),
+}));
+
+app.get("/ready", async (_req, reply) => {
+  if (!sfu.isReady()) {
+    return reply.status(503).send({ ok: false, service: "rtc-media-sfu", ready: false });
+  }
+  return { ok: true, service: "rtc-media-sfu", ready: true };
+});
 
 app.post<{ Params: { roomId: string }; Body: { peerId?: string } }>(
   "/v1/rooms/:roomId/join",
@@ -111,5 +123,19 @@ app.post<{
 });
 
 await sfu.start();
-await app.listen({ port: PORT, host: "0.0.0.0" });
-console.log(`RTC media SFU on http://localhost:${PORT}`);
+await app.listen({ port: env.port, host: "0.0.0.0" });
+console.log(`RTC media SFU on http://localhost:${env.port}`);
+
+let shuttingDown = false;
+
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Shutting down (${signal})...`);
+  await sfu.stop();
+  await app.close();
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));

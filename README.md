@@ -75,6 +75,45 @@ rtc.getMediaMode(); // "p2p" | "sfu"
 3. **Join room** on both.
 4. Try **1:1 Call** (SFU when Auto/SFU mode) or **Join group voice** for multi-user audio.
 
+## Phase 5 — Production hardening
+
+### Health checks
+
+| Service | Liveness | Readiness |
+|---------|----------|-----------|
+| Signaling | `GET /health` | `GET /ready` (Redis + PostgreSQL when configured) |
+| Media SFU | `GET /health` | `GET /ready` (mediasoup worker) |
+
+### Production env guards
+
+Set `NODE_ENV=production` and provide strong secrets. The server **fails fast** if:
+
+- `JWT_SECRET` or `ADMIN_API_KEY` use dev defaults
+- `DATABASE_URL` is missing (signaling)
+- `ANNOUNCED_IP` is still `127.0.0.1` (media-sfu)
+
+### Docker full stack
+
+```bash
+docker compose up -d --build
+```
+
+Starts postgres, redis, coturn, signaling, and media-sfu.
+
+### Graceful shutdown
+
+Both services handle `SIGTERM` / `SIGINT` — drain WebSockets, close Redis/DB, stop mediasoup worker.
+
+### Publish SDK to npm
+
+```bash
+npm run build:sdk
+npm run pack:sdk    # verify tarballs locally
+# Publish @rtc/protocol first, then @rtc/sdk
+npm publish -w @rtc/protocol
+npm publish -w @rtc/sdk
+```
+
 ## Phase 3 — App registry + infrastructure
 
 ### 1. Start infrastructure
@@ -162,4 +201,5 @@ media-sfu → mediasoup router/transports/producers
 | mediasoup SFU service | Done |
 | SDK ↔ SFU voice path | Done |
 | Group voice (SFU) | Done |
-| npm publish + production hardening | Next |
+| Production hardening | Done |
+| npm publish + cloud deploy | Next |

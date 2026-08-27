@@ -1,0 +1,21 @@
+FROM node:22-alpine AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY packages/media-sfu/package.json packages/media-sfu/
+RUN npm ci
+COPY packages/media-sfu packages/media-sfu
+RUN npm run build -w @rtc/media-sfu
+
+FROM node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package.json package-lock.json ./
+COPY packages/media-sfu/package.json packages/media-sfu/
+RUN npm ci --omit=dev --workspace=@rtc/media-sfu --include-workspace-root
+COPY --from=builder /app/packages/media-sfu/dist packages/media-sfu/dist
+WORKDIR /app/packages/media-sfu
+EXPOSE 4100
+EXPOSE 40000-40100/udp
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -qO- http://localhost:4100/health || exit 1
+CMD ["node", "dist/index.js"]

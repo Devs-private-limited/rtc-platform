@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build protocol
+        run: npm run build -w @rtc/protocol
+
+      - name: Build SDK
+        run: npm run build -w @rtc/sdk
+
+      - name: Build signaling
+        run: npm run build -w @rtc/signaling
+
+      - name: Build media-sfu
+        run: npm run build -w @rtc/media-sfu
+
+      - name: Verify npm packages
+        run: |
+          npm pack -w @rtc/protocol --dry-run
+          npm pack -w @rtc/sdk --dry-run

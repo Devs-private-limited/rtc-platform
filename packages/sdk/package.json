@@ -19,8 +19,13 @@
     "dev": "tsup --watch",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["webrtc", "rtc", "voice", "chat", "sdk"],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ajay-Devarasetty/rtc-platform.git",
+    "directory": "packages/sdk"
+  },
+  "keywords": ["webrtc", "rtc", "voice", "chat", "sdk"],
   "dependencies": {
     "@rtc/protocol": "0.1.0",
     "mediasoup-client": "^3.7.16"

@@ -1,8 +1,7 @@
 import "dotenv/config";
-import { randomUUID } from "crypto";
+import { WebSocketServer, WebSocket } from "ws";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { WebSocketServer, WebSocket } from "ws";
 import type {
   ClientMessage,
   ServerMessage,
@@ -13,7 +12,8 @@ import type {
 import { verifyToken, issueToken } from "./auth.js";
 import { verifyAppCredentials, seedDemoApp } from "./apps.js";
 import { getPlatformConfig } from "./config.js";
-import { runMigrations } from "./db.js";
+import { closeDb, getPool, runMigrations } from "./db.js";
+import { loadSignalingEnv } from "./env.js";
 import { handleClientMessage } from "./handlers.js";
 import { getIceConfig } from "./ice.js";
 import { MessageRelay } from "./relay.js";
@@ -27,13 +27,9 @@ import {
 } from "./store/redis.js";
 import type { PresenceStore, RoomStore } from "./store/types.js";
 
-const PORT = Number(process.env.PORT || 4000);
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-in-production";
-const INSTANCE_ID = process.env.INSTANCE_ID || randomUUID();
-const REDIS_URL = process.env.REDIS_URL;
-const DATABASE_URL = process.env.DATABASE_URL;
+const env = loadSignalingEnv();
 
-if (DATABASE_URL) {
+if (env.databaseUrl) {
   await runMigrations();
   await seedDemoApp();
   console.log("PostgreSQL app registry enabled");
@@ -47,26 +43,61 @@ await registerAdminRoutes(app);
 
 let rooms: RoomStore = new MemoryRoomStore();
 let presence: PresenceStore = new MemoryPresenceStore();
-let redisPub: ReturnType<typeof createRedisClient> | null = null;
-let redisSub: ReturnType<typeof createRedisClient> | null = null;
+let redisPub = env.redisUrl ? createRedisClient(env.redisUrl) : null;
+let redisSub = env.redisUrl ? createRedisClient(env.redisUrl) : null;
 
-if (REDIS_URL) {
-  redisPub = createRedisClient(REDIS_URL);
-  redisSub = createRedisClient(REDIS_URL);
+if (redisPub && redisSub) {
   rooms = new RedisRoomStore(redisPub);
   presence = new RedisPresenceStore(redisPub);
-  console.log(`Redis enabled (${INSTANCE_ID})`);
+  console.log(`Redis enabled (${env.instanceId})`);
 } else {
   console.log("Running in single-node mode (set REDIS_URL for scale)");
+}
+
+async function checkRedis() {
+  if (!redisPub) return true;
+  try {
+    const pong = await redisPub.ping();
+    return pong === "PONG";
+  } catch {
+    return false;
+  }
+}
+
+async function checkDatabase() {
+  const pool = getPool();
+  if (!pool) return true;
+  try {
+    await pool.query("SELECT 1");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 app.get("/health", async () => ({
   ok: true,
   service: "rtc-signaling",
-  instanceId: INSTANCE_ID,
-  redis: Boolean(REDIS_URL),
-  database: Boolean(DATABASE_URL),
+  instanceId: env.instanceId,
+  uptime: process.uptime(),
 }));
+
+app.get("/ready", async (_req, reply) => {
+  const checks = {
+    redis: await checkRedis(),
+    database: await checkDatabase(),
+  };
+  const ready = Object.values(checks).every(Boolean);
+  const payload = {
+    ok: ready,
+    service: "rtc-signaling",
+    instanceId: env.instanceId,
+    ready,
+    checks,
+  };
+  if (!ready) return reply.status(503).send(payload);
+  return payload;
+});
 
 app.get("/v1/config", async () => getPlatformConfig());
 app.get("/v1/ice", async () => getIceConfig());
@@ -87,7 +118,7 @@ app.post<{ Body: TokenRequest }>("/v1/token", async (req, reply) => {
     return reply.status(401).send({ error: "Invalid app credentials" });
   }
 
-  const token = issueToken({ appId, userId, roomId }, JWT_SECRET);
+  const token = issueToken({ appId, userId, roomId }, env.jwtSecret);
   const response: TokenResponse = { token, expiresIn: 3600 };
   return response;
 });
@@ -104,7 +135,7 @@ function send(ws: WebSocket, message: ServerMessage) {
 }
 
 const relay = new MessageRelay(
-  INSTANCE_ID,
+  env.instanceId,
   sockets,
   presence,
   redisPub,
@@ -124,7 +155,7 @@ wss.on("connection", (ws, req) => {
 
   let claims: TokenClaims;
   try {
-    claims = verifyToken(token, JWT_SECRET);
+    claims = verifyToken(token, env.jwtSecret);
   } catch {
     ws.close(4002, "Invalid token");
     return;
@@ -132,11 +163,11 @@ wss.on("connection", (ws, req) => {
 
   const { userId } = claims;
   sockets.set(userId, ws);
-  void presence.setOnline(userId, INSTANCE_ID);
+  void presence.setOnline(userId, env.instanceId);
 
   send(ws, {
     type: "connected",
-    payload: { userId, appId: claims.appId, instanceId: INSTANCE_ID },
+    payload: { userId, appId: claims.appId, instanceId: env.instanceId },
   });
 
   ws.on("message", (raw) => {
@@ -174,6 +205,30 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-await app.listen({ port: PORT, host: "0.0.0.0" });
-console.log(`RTC signaling server on http://localhost:${PORT}`);
-console.log(`WebSocket: ws://localhost:${PORT}/ws?token=...`);
+await app.listen({ port: env.port, host: "0.0.0.0" });
+console.log(`RTC signaling server on http://localhost:${env.port}`);
+console.log(`WebSocket: ws://localhost:${env.port}/ws?token=...`);
+
+let shuttingDown = false;
+
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Shutting down (${signal})...`);
+
+  for (const ws of sockets.values()) {
+    ws.close(1001, "Server shutting down");
+  }
+  sockets.clear();
+
+  await new Promise<void>((resolve) => wss.close(() => resolve()));
+  await relay.stop();
+  if (redisPub) await redisPub.quit();
+  if (redisSub) await redisSub.quit();
+  await closeDb();
+  await app.close();
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));

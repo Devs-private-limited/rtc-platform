@@ -1,4 +1,4 @@
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 import type { PresenceStore, RoomStore } from "./types.js";
 
 const ROOM_PREFIX = "rtc:room:";

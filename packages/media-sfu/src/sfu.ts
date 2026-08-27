@@ -3,10 +3,11 @@ import type {
   MediaKind,
   Producer,
   Router,
+  RtpCapabilities,
   Transport,
   WebRtcTransport,
   Worker,
-} from "mediasoup/node/lib/types.js";
+} from "mediasoup/types";
 
 export interface Peer {
   id: string;
@@ -39,6 +40,13 @@ export class SfuRoom {
 export class SfuManager {
   private worker: Worker | null = null;
   private rooms = new Map<string, SfuRoom>();
+  private shuttingDown = false;
+
+  constructor(private announcedIp: string) {}
+
+  isReady() {
+    return Boolean(this.worker) && !this.shuttingDown;
+  }
 
   async start() {
     const mediasoup = await import("mediasoup");
@@ -49,8 +57,28 @@ export class SfuManager {
     });
     this.worker.on("died", () => {
       console.error("mediasoup worker died");
-      process.exit(1);
+      if (!this.shuttingDown) process.exit(1);
     });
+  }
+
+  async stop() {
+    if (this.shuttingDown) return;
+    this.shuttingDown = true;
+
+    for (const room of this.rooms.values()) {
+      for (const peer of room.peers.values()) {
+        for (const consumer of peer.consumers.values()) consumer.close();
+        for (const producer of peer.producers.values()) producer.close();
+        for (const transport of peer.transports.values()) transport.close();
+      }
+      room.router.close();
+    }
+    this.rooms.clear();
+
+    if (this.worker) {
+      this.worker.close();
+      this.worker = null;
+    }
   }
 
   async getOrCreateRoom(roomId: string) {
@@ -79,7 +107,7 @@ export class SfuManager {
     const room = await this.getOrCreateRoom(roomId);
     const peer = room.getOrCreatePeer(peerId);
     const transport = await room.router.createWebRtcTransport({
-      listenIps: [{ ip: "0.0.0.0", announcedIp: process.env.ANNOUNCED_IP || "127.0.0.1" }],
+      listenIps: [{ ip: "0.0.0.0", announcedIp: this.announcedIp }],
       enableUdp: true,
       enableTcp: true,
       preferUdp: true,
@@ -116,7 +144,7 @@ export class SfuManager {
     peerId: string,
     transportId: string,
     producerId: string,
-    rtpCapabilities: Parameters<Router["canConsume"]>[1]
+    rtpCapabilities: RtpCapabilities
   ) {
     const room = this.getRoom(roomId);
     if (!room) throw new Error("Room not found");

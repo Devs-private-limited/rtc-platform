@@ -9,6 +9,11 @@ services:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rtc -d rtc"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
@@ -17,6 +22,11 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   coturn:
     image: coturn/coturn:latest
@@ -36,6 +46,51 @@ services:
       --no-tls
       --no-dtls
       --external-ip=127.0.0.1
+
+  signaling:
+    build:
+      context: .
+      dockerfile: Dockerfile.signaling
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      JWT_SECRET: dev-secret-change-in-production
+      ADMIN_API_KEY: dev-admin-key
+      DATABASE_URL: postgresql://rtc:rtc@postgres:5432/rtc
+      REDIS_URL: redis://redis:6379
+      SFU_URL: http://media-sfu:4100
+      TURN_URL: turn:coturn:3478
+      TURN_USERNAME: rtc
+      TURN_PASSWORD: rtc-turn-secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  media-sfu:
+    build:
+      context: .
+      dockerfile: Dockerfile.media-sfu
+    ports:
+      - "4100:4100"
+      - "40000-40100:40000-40100/udp"
+    environment:
+      PORT: 4100
+      ANNOUNCED_IP: 127.0.0.1
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4100/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
 volumes:
   pg_data:
