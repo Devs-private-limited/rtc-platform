@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import pg from "pg";
@@ -20,9 +20,14 @@ export async function runMigrations() {
   const db = getPool();
   if (!db) return false;
 
-  const dir = dirname(fileURLToPath(import.meta.url));
-  const sql = readFileSync(join(dir, "../migrations/001_apps.sql"), "utf8");
-  await db.query(sql);
+  const dir = join(dirname(fileURLToPath(import.meta.url)), "../migrations");
+  const files = readdirSync(dir)
+    .filter((file) => file.endsWith(".sql"))
+    .sort();
+  for (const file of files) {
+    const sql = readFileSync(join(dir, file), "utf8");
+    await db.query(sql);
+  }
   return true;
 }
 

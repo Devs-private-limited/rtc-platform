@@ -114,6 +114,50 @@ npm publish -w @rtc/protocol
 npm publish -w @rtc/sdk
 ```
 
+## Events + webhooks
+
+Room, message, and call activity is persisted to the `events` table (requires `DATABASE_URL`)
+and pushed to registered webhook endpoints.
+
+### Event types
+
+| Event | Emitted when |
+|-------|--------------|
+| `user.joined` / `user.left` | A user joins or leaves a room (incl. disconnect) |
+| `message.sent` | A room message is delivered |
+| `call.ringing` | A call invite is relayed |
+| `call.connected` | Callee accepts |
+| `call.failed` | Callee rejects |
+| `call.ended` | Either side ends the call |
+
+### Register a webhook
+
+```bash
+curl -X POST http://localhost:4000/v1/admin/apps/demo-app/webhooks \
+  -H "x-admin-key: dev-admin-key" \
+  -H "Content-Type: application/json" \
+  -d "{\"url\":\"https://your-app.com/hooks/rtc\",\"events\":[\"call.ended\",\"user.joined\"]}"
+```
+
+Returns the webhook `secret` once — store it. Deliveries are `POST`ed as:
+
+```json
+{ "type": "user.joined", "appId": "demo-app", "data": { "roomId": "room-1", "userId": "u1" },
+  "eventId": "42", "createdAt": "2026-01-01T00:00:00.000Z" }
+```
+
+### Verify the signature
+
+Each delivery carries an `X-RTC-Signature` header — HMAC-SHA256 of the raw body using your secret.
+Failed deliveries retry up to 3 times with backoff; every attempt is logged to `webhook_deliveries`.
+
+```js
+import { createHmac, timingSafeEqual } from "crypto";
+
+const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
+const ok = timingSafeEqual(Buffer.from(expected), Buffer.from(req.headers["x-rtc-signature"]));
+```
+
 ## Phase 3 — App registry + infrastructure
 
 ### 1. Start infrastructure
@@ -174,6 +218,11 @@ Output: `packages/sdk/dist` (ESM + CJS + types). See `packages/sdk/README.md` fo
 | `GET /v1/config` | ICE/TURN + SFU URL + feature flags |
 | `POST /v1/admin/apps` | Register new app |
 | `GET /v1/admin/apps` | List apps |
+| `POST /v1/admin/apps/:appId/webhooks` | Register webhook endpoint |
+| `GET /v1/admin/apps/:appId/webhooks` | List webhooks |
+| `DELETE /v1/admin/apps/:appId/webhooks/:id` | Remove webhook |
+| `GET /v1/admin/apps/:appId/events` | Call/message event log (`?type=&limit=`) |
+| `GET /v1/admin/apps/:appId/usage` | Event counts per type |
 | `WS /ws?token=` | Signaling (chat, calls, SFU producer discovery) |
 | `POST /v1/rooms/:id/join` | SFU — join media room |
 

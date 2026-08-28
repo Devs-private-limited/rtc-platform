@@ -17,6 +17,7 @@ interface HandlerContext {
   rooms: RoomStore;
   send: (ws: WebSocket, message: ServerMessage) => void;
   sendToUser: (userId: string, message: ServerMessage) => Promise<boolean>;
+  dispatch: (type: string, payload: Record<string, unknown>) => void;
 }
 
 async function relayToUser(
@@ -58,6 +59,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
           payload: { roomId, userId },
         });
       }
+      ctx.dispatch("user.joined", { roomId, userId });
       break;
     }
 
@@ -71,6 +73,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
           payload: { roomId, userId },
         });
       }
+      ctx.dispatch("user.left", { roomId, userId });
       break;
     }
 
@@ -92,6 +95,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
           await ctx.sendToUser(memberId, { type: "message", payload });
         }
       }
+      ctx.dispatch("message.sent", { roomId, fromUserId: userId });
       break;
     }
 
@@ -107,6 +111,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
         fromUserId: userId,
         toUserId,
       } satisfies CallPeerPayload);
+      ctx.dispatch("call.ringing", { callId, roomId, fromUserId: userId, toUserId });
       break;
     }
 
@@ -118,6 +123,13 @@ export async function handleClientMessage(ctx: HandlerContext) {
         ...payload,
         fromUserId: userId,
       });
+      const eventType =
+        message.type === "call_accept"
+          ? "call.connected"
+          : message.type === "call_reject"
+            ? "call.failed"
+            : "call.ended";
+      ctx.dispatch(eventType, { ...payload, fromUserId: userId });
       break;
     }
 
