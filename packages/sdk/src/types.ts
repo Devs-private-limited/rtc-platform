@@ -50,6 +50,16 @@ export interface SummaryReadyEvent {
   transcript: string;
 }
 
+export interface CallQualityEvent {
+  callId?: string;
+  roomId: string;
+  mediaMode: "p2p" | "sfu";
+  metrics: import("@rtc/protocol").CallQualityMetrics;
+  score: number;
+  label: import("@rtc/protocol").QualityLabel;
+  at: number;
+}
+
 export interface RTCEvents {
   connected: [{ userId: string }];
   disconnected: [];
@@ -78,6 +88,7 @@ export interface RTCEvents {
   recordingReady: [RecordingReadyEvent];
   transcriptReady: [TranscriptReadyEvent];
   summaryReady: [SummaryReadyEvent];
+  callQuality: [CallQualityEvent];
   error: [{ message: string }];
 }
 

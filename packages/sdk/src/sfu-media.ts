@@ -335,6 +335,42 @@ export class SfuMediaEngine {
     }
   }
 
+  async collectQualityMetrics(): Promise<import("@rtc/protocol").CallQualityMetrics | null> {
+    if (!this.recvTransport) return null;
+    const stats = await this.recvTransport.getStats();
+    let jitterMs: number | null = null;
+    let packetLossPct: number | null = null;
+    let inboundBitrateKbps: number | null = null;
+
+    for (const report of stats.values()) {
+      if (report.type === "inbound-rtp" && (report as { kind?: string }).kind === "audio") {
+        const inbound = report as {
+          jitter?: number;
+          packetsLost?: number;
+          packetsReceived?: number;
+          bitrate?: number;
+        };
+        if (inbound.jitter != null) jitterMs = Math.round(inbound.jitter);
+        if (inbound.packetsLost != null && inbound.packetsReceived != null) {
+          const total = inbound.packetsLost + inbound.packetsReceived;
+          packetLossPct = total > 0 ? Math.round((inbound.packetsLost / total) * 1000) / 10 : 0;
+        }
+        if (inbound.bitrate != null) inboundBitrateKbps = Math.round(inbound.bitrate / 1000);
+      }
+    }
+
+    return {
+      rttMs: null,
+      jitterMs,
+      packetLossPct,
+      inboundBitrateKbps,
+      outboundBitrateKbps: null,
+      audioLevel: null,
+      connectionState: this.recvTransport.connectionState,
+      iceState: this.recvTransport.iceConnectionState ?? null,
+    };
+  }
+
   destroy() {
     for (const consumer of this.consumers.values()) consumer.close();
     this.consumers.clear();

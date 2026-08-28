@@ -76,6 +76,10 @@ export class P2pMediaEngine {
     return this.localStream;
   }
 
+  getPeerConnection() {
+    return this.peerConnection;
+  }
+
   async createOffer(peerUserId: string, callId: string) {
     await this.prepare(true);
     const offer = await this.peerConnection!.createOffer();

@@ -11,6 +11,26 @@ export interface CallSession {
   durationMs: number | null;
 }
 
+interface MemoryCallSession {
+  appId: string;
+  callId: string;
+  roomId: string;
+  callerUserId: string;
+  calleeUserId: string;
+  startedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+}
+
+interface MemoryEvent {
+  appId: string;
+  type: string;
+  createdAt: string;
+}
+
+const memoryCallSessions: MemoryCallSession[] = [];
+const memoryEvents: MemoryEvent[] = [];
+
 export async function startCallSession(
   appId: string,
   callId: string,
@@ -19,32 +39,74 @@ export async function startCallSession(
   calleeUserId: string
 ) {
   const db = getPool();
-  if (!db) return;
+  if (db) {
+    await db.query(
+      `INSERT INTO call_sessions (app_id, call_id, room_id, caller_user_id, callee_user_id)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (app_id, call_id) DO NOTHING`,
+      [appId, callId, roomId, callerUserId, calleeUserId]
+    );
+    return;
+  }
 
-  await db.query(
-    `INSERT INTO call_sessions (app_id, call_id, room_id, caller_user_id, callee_user_id)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (app_id, call_id) DO NOTHING`,
-    [appId, callId, roomId, callerUserId, calleeUserId]
-  );
+  if (!memoryCallSessions.some((s) => s.appId === appId && s.callId === callId)) {
+    memoryCallSessions.push({
+      appId,
+      callId,
+      roomId,
+      callerUserId,
+      calleeUserId,
+      startedAt: new Date().toISOString(),
+      endedAt: null,
+      durationMs: null,
+    });
+  }
 }
 
 export async function endCallSession(appId: string, callId: string) {
   const db = getPool();
-  if (!db) return;
+  if (db) {
+    await db.query(
+      `UPDATE call_sessions
+       SET ended_at = NOW(),
+           duration_ms = EXTRACT(EPOCH FROM (NOW() - started_at))::int * 1000
+       WHERE app_id = $1 AND call_id = $2 AND ended_at IS NULL`,
+      [appId, callId]
+    );
+    return;
+  }
 
-  await db.query(
-    `UPDATE call_sessions
-     SET ended_at = NOW(),
-         duration_ms = EXTRACT(EPOCH FROM (NOW() - started_at))::int * 1000
-     WHERE app_id = $1 AND call_id = $2 AND ended_at IS NULL`,
-    [appId, callId]
-  );
+  const session = memoryCallSessions.find((s) => s.appId === appId && s.callId === callId);
+  if (session && !session.endedAt) {
+    const endedAt = new Date();
+    session.endedAt = endedAt.toISOString();
+    session.durationMs = endedAt.getTime() - new Date(session.startedAt).getTime();
+  }
+}
+
+export function recordMemoryEvent(appId: string, type: string) {
+  memoryEvents.push({ appId, type, createdAt: new Date().toISOString() });
+  if (memoryEvents.length > 10000) memoryEvents.splice(0, memoryEvents.length - 10000);
 }
 
 export async function listCallSessions(appId: string, limit = 50): Promise<CallSession[]> {
   const db = getPool();
-  if (!db) throw new Error("Database not configured");
+  if (!db) {
+    return memoryCallSessions
+      .filter((s) => s.appId === appId)
+      .slice(-limit)
+      .reverse()
+      .map((s, i) => ({
+        id: i + 1,
+        callId: s.callId,
+        roomId: s.roomId,
+        callerUserId: s.callerUserId,
+        calleeUserId: s.calleeUserId,
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+        durationMs: s.durationMs,
+      }));
+  }
 
   const capped = Math.min(Math.max(limit, 1), 200);
   const result = await db.query(
@@ -80,7 +142,30 @@ export async function getMeteringSummary(
   opts: { from?: string; to?: string } = {}
 ): Promise<MeteringSummary> {
   const db = getPool();
-  if (!db) throw new Error("Database not configured");
+  if (!db) {
+    const sessions = memoryCallSessions.filter((s) => {
+      if (s.appId !== appId) return false;
+      if (opts.from && s.startedAt < opts.from) return false;
+      if (opts.to && s.startedAt > opts.to) return false;
+      return true;
+    });
+    const events = memoryEvents.filter((e) => {
+      if (e.appId !== appId) return false;
+      if (opts.from && e.createdAt < opts.from) return false;
+      if (opts.to && e.createdAt > opts.to) return false;
+      return true;
+    });
+    const totalMs = sessions.reduce((sum, s) => sum + (s.durationMs ?? 0), 0);
+    return {
+      appId,
+      period: { from: opts.from ?? null, to: opts.to ?? null },
+      messagesSent: events.filter((e) => e.type === "message.sent").length,
+      callsConnected: sessions.length,
+      callsEnded: sessions.filter((s) => s.endedAt).length,
+      callMinutes: Math.round((totalMs / 60_000) * 100) / 100,
+      totalEvents: events.length,
+    };
+  }
 
   const params: unknown[] = [appId];
   let eventFilter = "app_id = $1";

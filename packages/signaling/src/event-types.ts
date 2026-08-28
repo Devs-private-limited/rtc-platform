@@ -10,6 +10,9 @@ export const WEBHOOK_EVENT_TYPES = [
   "recording.uploaded",
   "transcript.ready",
   "summary.ready",
+  "call.quality.report",
+  "call.quality.degraded",
+  "billing.threshold",
 ] as const;
 
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];

@@ -10,7 +10,8 @@ export type ClientMessageType =
   | "webrtc_answer"
   | "ice_candidate"
   | "sfu_producer"
-  | "recording_ready";
+  | "recording_ready"
+  | "call_quality_report";
 
 export type ServerMessageType =
   | "connected"
@@ -149,6 +150,28 @@ export interface SummaryReadyPayload {
   callId?: string;
   summary: string;
   transcript: string;
+}
+
+export interface CallQualityMetrics {
+  rttMs: number | null;
+  jitterMs: number | null;
+  packetLossPct: number | null;
+  inboundBitrateKbps: number | null;
+  outboundBitrateKbps: number | null;
+  audioLevel: number | null;
+  connectionState: string | null;
+  iceState: string | null;
+}
+
+export type QualityLabel = "excellent" | "good" | "fair" | "poor";
+
+export interface CallQualityReportPayload {
+  callId?: string;
+  roomId: string;
+  mediaMode: "p2p" | "sfu";
+  metrics: CallQualityMetrics;
+  qualityScore: number;
+  qualityLabel: QualityLabel;
 }
 
 export interface TokenRequest {

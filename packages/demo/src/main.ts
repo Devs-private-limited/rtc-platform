@@ -40,6 +40,7 @@ function createPanel(config: PanelConfig) {
   root.innerHTML = `
     <h2>${config.title}</h2>
     <div class="status">Disconnected</div>
+    <div class="quality-badge" hidden>Quality: —</div>
     <div class="row">
       <input class="user-id" value="${config.defaultUserId}" placeholder="User ID" />
       <input class="room-id" value="${DEFAULT_ROOM}" placeholder="Room ID" />
@@ -121,6 +122,7 @@ function createPanel(config: PanelConfig) {
   const localVideo = root.querySelector(".local-video") as HTMLVideoElement;
   const remoteVideos = root.querySelector(".remote-videos") as HTMLElement;
   const logEl = root.querySelector(".log") as HTMLElement;
+  const qualityBadge = root.querySelector(".quality-badge") as HTMLElement;
 
   let rtc: RTCExpress | null = null;
   let muted = false;
@@ -245,6 +247,7 @@ function createPanel(config: PanelConfig) {
           setCallUi(false, false);
           inCall = false;
           isVideoSession = false;
+          qualityBadge.hidden = true;
           clearRemoteVideos();
           videoArea.hidden = !inGroupMedia;
           setConnected(true);
@@ -268,6 +271,14 @@ function createPanel(config: PanelConfig) {
       });
       rtc.on("summaryReady", ({ summary }) => {
         log(logEl, `AI Summary: ${summary}`);
+      });
+      rtc.on("callQuality", ({ score, label, metrics }) => {
+        qualityBadge.hidden = false;
+        qualityBadge.className = `quality-badge ${label}`;
+        const parts = [`Quality: ${label} (${score})`];
+        if (metrics.rttMs != null) parts.push(`RTT ${metrics.rttMs}ms`);
+        if (metrics.packetLossPct != null) parts.push(`loss ${metrics.packetLossPct}%`);
+        qualityBadge.textContent = parts.join(" · ");
       });
       rtc.on("error", ({ message }) => log(logEl, message));
       rtc.on("voiceRoomJoined", () => {

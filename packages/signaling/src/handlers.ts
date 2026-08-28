@@ -2,6 +2,7 @@ import type { WebSocket } from "ws";
 import type {
   CallInvitePayload,
   CallPeerPayload,
+  CallQualityReportPayload,
   ClientMessage,
   RecordingReadyPayload,
   RoomMessagePayload,
@@ -12,6 +13,8 @@ import type {
 import type { RoomStore } from "./store/types.js";
 import { endCallSession, startCallSession } from "./metering.js";
 import { saveRecording } from "./recordings.js";
+import { saveQualityReport } from "./quality.js";
+import { maybeDispatchBillingAlert } from "./billing.js";
 
 interface HandlerContext {
   message: ClientMessage;
@@ -99,6 +102,9 @@ export async function handleClientMessage(ctx: HandlerContext) {
         }
       }
       ctx.dispatch("message.sent", { roomId, fromUserId: userId });
+      void maybeDispatchBillingAlert(ctx.claims.appId, (type, payload) =>
+        ctx.dispatch(type, payload)
+      );
       break;
     }
 
@@ -151,6 +157,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
         );
       } else if (message.type === "call_end") {
         void endCallSession(ctx.claims.appId, payload.callId);
+        void maybeDispatchBillingAlert(ctx.claims.appId, (type, p) => ctx.dispatch(type, p));
       }
       break;
     }
@@ -218,6 +225,22 @@ export async function handleClientMessage(ctx: HandlerContext) {
         requestId: message.requestId,
       });
       ctx.dispatch("recording.ready", { ...payload, userId, recordingId: saved.id });
+      void maybeDispatchBillingAlert(ctx.claims.appId, (type, p) => ctx.dispatch(type, p));
+      break;
+    }
+
+    case "call_quality_report": {
+      const payload = message.payload as CallQualityReportPayload;
+      if (!payload.roomId || payload.qualityScore == null || !payload.qualityLabel || !payload.metrics) {
+        ctx.send(ctx.ws, { type: "error", payload: { message: "Invalid quality report" } });
+        return;
+      }
+      await saveQualityReport(ctx.claims.appId, userId, payload);
+      ctx.dispatch("call.quality.report", { ...payload, userId });
+      if (payload.qualityLabel === "poor") {
+        ctx.dispatch("call.quality.degraded", { ...payload, userId });
+      }
+      void maybeDispatchBillingAlert(ctx.claims.appId, (type, p) => ctx.dispatch(type, p));
       break;
     }
 

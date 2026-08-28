@@ -56,6 +56,20 @@ header p {
   color: #94a3b8;
 }
 
+.quality-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #334155;
+  color: #e2e8f0;
+}
+
+.quality-badge.excellent { background: #14532d; color: #86efac; }
+.quality-badge.good { background: #1e3a5f; color: #93c5fd; }
+.quality-badge.fair { background: #713f12; color: #fcd34d; }
+.quality-badge.poor { background: #7f1d1d; color: #fca5a5; }
+
 .row {
   display: flex;
   gap: 8px;

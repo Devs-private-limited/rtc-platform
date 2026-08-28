@@ -213,6 +213,34 @@ export async function updateRecordingIntelligence(
   }
 }
 
+export async function countRecordingsForApp(
+  appId: string,
+  opts: { from?: string; to?: string } = {}
+) {
+  const db = getPool();
+  if (!db) {
+    return [...memoryRecordings.values()].filter((r) => {
+      if (r.appId !== appId) return false;
+      if (opts.from && r.createdAt < opts.from) return false;
+      if (opts.to && r.createdAt > opts.to) return false;
+      return true;
+    }).length;
+  }
+
+  const params: unknown[] = [appId];
+  let filter = "app_id = $1";
+  if (opts.from) {
+    params.push(opts.from);
+    filter += ` AND created_at >= $${params.length}`;
+  }
+  if (opts.to) {
+    params.push(opts.to);
+    filter += ` AND created_at <= $${params.length}`;
+  }
+  const result = await db.query(`SELECT COUNT(*)::int AS count FROM recordings WHERE ${filter}`, params);
+  return result.rows[0]?.count ?? 0;
+}
+
 export async function listRecordings(appId: string, limit = 50): Promise<RecordingRecord[]> {
   const db = getPool();
   if (!db) {

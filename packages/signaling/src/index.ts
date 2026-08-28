@@ -23,6 +23,8 @@ import { registerEventRoutes } from "./routes/events.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerRecordingRoutes } from "./routes/recordings.js";
 import { registerRecordingUploadRoutes } from "./routes/recording-upload.js";
+import { registerQualityRoutes } from "./routes/quality.js";
+import { registerBillingRoutes } from "./routes/billing.js";
 import { dispatchEvent } from "./webhooks.js";
 import { setRecordingsDir, ensureRecordingsDir } from "./recordings.js";
 import { MemoryPresenceStore, MemoryRoomStore } from "./store/memory.js";
@@ -51,6 +53,8 @@ await registerAdminRoutes(app);
 await registerWebhookRoutes(app);
 await registerEventRoutes(app);
 await registerRecordingRoutes(app);
+await registerQualityRoutes(app);
+await registerBillingRoutes(app);
 
 let rooms: RoomStore = new MemoryRoomStore();
 let presence: PresenceStore = new MemoryPresenceStore();

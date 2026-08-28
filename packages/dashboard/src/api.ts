@@ -26,6 +26,7 @@ export interface AppRecord {
   appId: string;
   name: string;
   active: boolean;
+  plan?: string;
   createdAt: string;
 }
 
@@ -68,6 +69,49 @@ export interface MeteringSummary {
   totalEvents: number;
 }
 
+export interface QualityReport {
+  id: number;
+  callId: string | null;
+  roomId: string;
+  userId: string;
+  mediaMode: string;
+  qualityScore: number;
+  qualityLabel: string;
+  rttMs: number | null;
+  jitterMs: number | null;
+  packetLossPct: number | null;
+  createdAt: string;
+}
+
+export interface QualitySummary {
+  appId: string;
+  reportCount: number;
+  avgScore: number;
+  poorCount: number;
+  fairCount: number;
+  goodCount: number;
+  excellentCount: number;
+  avgRttMs: number | null;
+  avgPacketLossPct: number | null;
+}
+
+export interface BillingSummary {
+  appId: string;
+  plan: string;
+  planName: string;
+  usage: {
+    callMinutes: number;
+    messagesSent: number;
+    recordings: number;
+    transcriptionMinutes: number;
+    qualityReports: number;
+  };
+  limits: Record<string, number>;
+  limitStatus: Record<string, { used: number; limit: number; percent: number; exceeded: boolean }>;
+  estimatedCostUsd: number;
+  overageCostUsd: number;
+}
+
 export const api = {
   listApps: () => adminFetch<{ apps: AppRecord[] }>("/v1/admin/apps"),
   createApp: (name: string) =>
@@ -105,4 +149,19 @@ export const api = {
     ),
   eventTypes: () =>
     adminFetch<{ eventTypes: string[] }>("/v1/admin/webhook-event-types"),
+  listQualityReports: (appId: string, limit = 50) =>
+    adminFetch<{ reports: QualityReport[] }>(`/v1/admin/apps/${appId}/quality?limit=${limit}`),
+  getQualitySummary: (appId: string) =>
+    adminFetch<QualitySummary>(`/v1/admin/apps/${appId}/quality/summary`),
+  getBilling: (appId: string) =>
+    adminFetch<BillingSummary>(`/v1/admin/apps/${appId}/billing`),
+  setPlan: (appId: string, plan: string) =>
+    adminFetch<{ appId: string; plan: string }>(`/v1/admin/apps/${appId}/plan`, {
+      method: "PATCH",
+      body: JSON.stringify({ plan }),
+    }),
+  listPlans: () =>
+    adminFetch<{ plans: Record<string, { name: string; limits: Record<string, number> }> }>(
+      "/v1/admin/billing/plans"
+    ),
 };

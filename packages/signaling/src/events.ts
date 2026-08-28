@@ -1,4 +1,5 @@
 import { getPool } from "./db.js";
+import { recordMemoryEvent } from "./metering.js";
 
 export interface EventRecord {
   id: number;
@@ -25,7 +26,10 @@ export async function recordEvent(
   payload: Record<string, unknown>
 ): Promise<{ id: number; createdAt: string } | null> {
   const db = getPool();
-  if (!db) return null;
+  if (!db) {
+    recordMemoryEvent(appId, type);
+    return null;
+  }
 
   const result = await db.query(
     `INSERT INTO events (app_id, type, room_id, user_id, payload)

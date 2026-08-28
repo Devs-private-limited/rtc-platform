@@ -10,6 +10,8 @@ import type {
 import { EventEmitter } from "./events.js";
 import { P2pMediaEngine } from "./p2p-media.js";
 import { CallRecorder } from "./recording.js";
+import { QualityMonitor } from "./call-quality.js";
+import { collectPeerConnectionStats } from "./call-quality.js";
 import { SfuMediaEngine } from "./sfu-media.js";
 import {
   DEFAULT_STUN_SERVERS,
@@ -63,6 +65,8 @@ export class RTCExpress extends EventEmitter {
     reject: (err: Error) => void;
     roomId: string;
   } | null = null;
+  private qualityMonitor: QualityMonitor | null = null;
+  private qualityMonitoringEnabled = true;
 
   static fetchToken = fetchToken;
   static fetchPlatformConfig = fetchPlatformConfig;
@@ -276,6 +280,7 @@ export class RTCExpress extends EventEmitter {
     this.inVoiceRoom = true;
     this.emit("voiceRoomJoined", { roomId: this.roomId, mediaMode: "sfu" });
     this.emitLocalStream();
+    this.startQualityMonitoring();
   }
 
   leaveVoiceRoom() {
@@ -286,6 +291,7 @@ export class RTCExpress extends EventEmitter {
       this.sfu = null;
     }
     this.inVoiceRoom = false;
+    if (!this.inVideoRoom) this.stopQualityMonitoring();
     if (roomId) this.emit("voiceRoomLeft", { roomId });
   }
 
@@ -296,6 +302,7 @@ export class RTCExpress extends EventEmitter {
     this.inVideoRoom = true;
     this.emit("videoRoomJoined", { roomId: this.roomId, mediaMode: "sfu" });
     this.emitLocalStream();
+    this.startQualityMonitoring();
   }
 
   leaveVideoRoom() {
@@ -304,6 +311,7 @@ export class RTCExpress extends EventEmitter {
     this.sfu?.destroy();
     this.sfu = null;
     this.inVideoRoom = false;
+    this.stopQualityMonitoring();
     if (roomId) this.emit("videoRoomLeft", { roomId });
     this.emit("localStream", { stream: null });
   }
@@ -402,6 +410,67 @@ export class RTCExpress extends EventEmitter {
 
   isRecording() {
     return this.recorder.isRecording();
+  }
+
+  setQualityMonitoring(enabled: boolean) {
+    this.qualityMonitoringEnabled = enabled;
+    if (!enabled) this.stopQualityMonitoring();
+    else if (this.isInMediaSession()) this.startQualityMonitoring();
+  }
+
+  startQualityMonitoring(intervalMs = 5000) {
+    if (!this.qualityMonitoringEnabled || !this.roomId) return;
+    this.stopQualityMonitoring();
+    this.qualityMonitor = new QualityMonitor(
+      () => this.collectQualityMetrics(),
+      (sample, degraded) => {
+        const mediaMode = this.getActiveMediaMode();
+        const event = {
+          callId: this.activeCall?.callId,
+          roomId: this.roomId!,
+          mediaMode,
+          metrics: sample.metrics,
+          score: sample.score,
+          label: sample.label,
+          at: sample.at,
+        };
+        this.emit("callQuality", event);
+        this.send({
+          type: "call_quality_report",
+          payload: {
+            callId: event.callId,
+            roomId: event.roomId,
+            mediaMode,
+            metrics: sample.metrics,
+            qualityScore: sample.score,
+            qualityLabel: sample.label,
+          },
+        });
+        if (degraded) {
+          this.emit("error", { message: `Call quality degraded (score ${sample.score})` });
+        }
+      }
+    );
+    this.qualityMonitor.start(intervalMs);
+  }
+
+  stopQualityMonitoring() {
+    this.qualityMonitor?.stop();
+    this.qualityMonitor = null;
+  }
+
+  private getActiveMediaMode(): "p2p" | "sfu" {
+    if (this.sfu && (this.activeCall || this.inVoiceRoom || this.inVideoRoom)) return "sfu";
+    return "p2p";
+  }
+
+  private async collectQualityMetrics() {
+    if (this.sfu && (this.activeCall || this.inVoiceRoom || this.inVideoRoom)) {
+      return this.sfu.collectQualityMetrics();
+    }
+    const pc = this.p2p?.getPeerConnection();
+    if (pc) return collectPeerConnectionStats(pc);
+    return null;
   }
 
   startRecording() {
@@ -549,6 +618,7 @@ export class RTCExpress extends EventEmitter {
         mediaMode: "sfu",
         callType,
       });
+      this.startQualityMonitoring();
       return;
     }
 
@@ -568,6 +638,7 @@ export class RTCExpress extends EventEmitter {
         mediaMode: "p2p",
         callType,
       });
+      this.startQualityMonitoring();
     });
   }
 
@@ -578,6 +649,7 @@ export class RTCExpress extends EventEmitter {
 
   private cleanupCall(state: "ended" | "rejected") {
     if (!this.activeCall) return;
+    this.stopQualityMonitoring();
     const { callId, peerUserId, roomId, callType } = this.activeCall;
     this.p2p?.destroy();
     this.p2p = null;

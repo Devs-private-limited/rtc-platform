@@ -3,7 +3,7 @@ import { api, getAdminKey, setAdminKey, type AppRecord } from "./api";
 
 const app = document.getElementById("app")!;
 let selectedApp: AppRecord | null = null;
-let activeTab: "overview" | "events" | "webhooks" | "deliveries" | "quickstart" = "overview";
+let activeTab: "overview" | "events" | "webhooks" | "deliveries" | "quality" | "billing" | "quickstart" = "overview";
 let eventTypes: string[] = [];
 
 function fmtDate(iso: string) {
@@ -171,7 +171,7 @@ async function renderAppDetail() {
       </div>
     </header>
     <div class="tabs">
-      ${(["overview", "events", "webhooks", "deliveries", "quickstart"] as const)
+      ${(["overview", "events", "quality", "billing", "webhooks", "deliveries", "quickstart"] as const)
         .map((t) => `<button class="tab ${activeTab === t ? "active" : ""}" data-tab="${t}">${t}</button>`)
         .join("")}
     </div>
@@ -199,6 +199,8 @@ async function renderAppDetail() {
   try {
     if (activeTab === "overview") await renderOverview(content, appId);
     else if (activeTab === "events") await renderEvents(content, appId);
+    else if (activeTab === "quality") await renderQuality(content, appId);
+    else if (activeTab === "billing") await renderBilling(content, appId);
     else if (activeTab === "webhooks") await renderWebhooks(content, appId);
     else if (activeTab === "deliveries") await renderDeliveries(content, appId);
     else await renderQuickstart(content, appId);
@@ -226,6 +228,107 @@ async function renderOverview(el: HTMLElement, appId: string) {
         <thead><tr><th>Type</th><th>Count</th></tr></thead>
         <tbody>
           ${usage.byType.length ? usage.byType.map((r) => `<tr><td>${r.type}</td><td>${r.count}</td></tr>`).join("") : `<tr><td colspan="2" class="muted">No events yet</td></tr>`}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+async function renderBilling(el: HTMLElement, appId: string) {
+  const billing = await api.getBilling(appId);
+  const metrics = [
+    ["Call minutes", "callMinutes"],
+    ["Messages", "messages"],
+    ["Recordings", "recordings"],
+    ["Transcription min", "transcriptionMinutes"],
+    ["Quality reports", "qualityReports"],
+  ] as const;
+
+  el.innerHTML = `
+    <section class="card">
+      <h2>Billing — ${billing.planName} plan</h2>
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="stat"><div class="label">Estimated cost</div><div class="value">$${billing.estimatedCostUsd}</div></div>
+        <div class="stat"><div class="label">Overage cost</div><div class="value">$${billing.overageCostUsd}</div></div>
+      </div>
+      <div class="row" style="margin-bottom:16px">
+        <label>Change plan
+          <select id="plan-select">
+            <option value="free" ${billing.plan === "free" ? "selected" : ""}>Free</option>
+            <option value="starter" ${billing.plan === "starter" ? "selected" : ""}>Starter</option>
+            <option value="pro" ${billing.plan === "pro" ? "selected" : ""}>Pro</option>
+          </select>
+        </label>
+        <button id="save-plan-btn">Update plan</button>
+      </div>
+      <div id="plan-error" class="error"></div>
+    </section>
+    <section class="card">
+      <h2>Usage vs limits</h2>
+      <table>
+        <thead><tr><th>Metric</th><th>Used</th><th>Limit</th><th>%</th><th>Status</th></tr></thead>
+        <tbody>
+          ${metrics.map(([label, key]) => {
+            const s = billing.limitStatus[key];
+            return `<tr>
+              <td>${label}</td>
+              <td>${s.used}</td>
+              <td>${s.limit}</td>
+              <td>${s.percent}%</td>
+              <td><span class="badge ${s.exceeded ? "fail" : s.percent >= 80 ? "off" : "ok"}">${s.exceeded ? "exceeded" : s.percent >= 80 ? "warning" : "ok"}</span></td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </section>
+  `;
+
+  document.getElementById("save-plan-btn")!.onclick = async () => {
+    const plan = (document.getElementById("plan-select") as HTMLSelectElement).value;
+    const errEl = document.getElementById("plan-error")!;
+    errEl.textContent = "";
+    try {
+      await api.setPlan(appId, plan);
+      renderBilling(el, appId);
+    } catch (e) {
+      errEl.textContent = e instanceof Error ? e.message : "Failed to update plan";
+    }
+  };
+}
+
+async function renderQuality(el: HTMLElement, appId: string) {
+  const [summary, { reports }] = await Promise.all([
+    api.getQualitySummary(appId),
+    api.listQualityReports(appId, 100),
+  ]);
+
+  el.innerHTML = `
+    <section class="card">
+      <h2>Call quality summary</h2>
+      <div class="grid-2">
+        <div class="stat"><div class="label">Avg score</div><div class="value">${summary.avgScore || "—"}</div></div>
+        <div class="stat"><div class="label">Reports</div><div class="value">${summary.reportCount}</div></div>
+        <div class="stat"><div class="label">Avg RTT</div><div class="value">${summary.avgRttMs != null ? `${summary.avgRttMs}ms` : "—"}</div></div>
+        <div class="stat"><div class="label">Avg packet loss</div><div class="value">${summary.avgPacketLossPct != null ? `${summary.avgPacketLossPct}%` : "—"}</div></div>
+        <div class="stat"><div class="label">Excellent</div><div class="value">${summary.excellentCount}</div></div>
+        <div class="stat"><div class="label">Poor</div><div class="value">${summary.poorCount}</div></div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Recent quality reports</h2>
+      <table>
+        <thead><tr><th>Time</th><th>Score</th><th>Label</th><th>RTT</th><th>Loss</th><th>Room</th><th>User</th></tr></thead>
+        <tbody>
+          ${reports.length ? reports.map((r) => `
+            <tr>
+              <td>${fmtDate(r.createdAt)}</td>
+              <td>${r.qualityScore}</td>
+              <td>${r.qualityLabel}</td>
+              <td>${r.rttMs != null ? `${r.rttMs}ms` : "—"}</td>
+              <td>${r.packetLossPct != null ? `${r.packetLossPct}%` : "—"}</td>
+              <td>${r.roomId}</td>
+              <td>${r.userId}</td>
+            </tr>`).join("") : `<tr><td colspan="7" class="empty">No quality reports yet. Start a call in the demo.</td></tr>`}
         </tbody>
       </table>
     </section>

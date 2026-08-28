@@ -142,6 +142,55 @@ rtc.on("transcriptReady", ({ recordingId, transcript }) => { /* show captions */
 rtc.on("summaryReady", ({ recordingId, summary }) => { /* meeting notes */ });
 ```
 
+## Phase 6 — Call quality observability
+
+The SDK samples WebRTC stats every 5s during calls and group media sessions.
+
+### Metrics
+
+RTT, jitter, packet loss, bitrate, connection/ICE state — scored 0–100 (`excellent` → `poor`).
+
+### SDK
+
+```ts
+rtc.on("callQuality", ({ score, label, metrics, callId, roomId }) => {
+  console.log(label, score, metrics.rttMs, metrics.packetLossPct);
+});
+rtc.setQualityMonitoring(false); // disable if needed
+```
+
+Webhook events: `call.quality.report`, `call.quality.degraded`
+
+### Dashboard
+
+**Quality** tab at http://localhost:5181 — per-app summaries and recent reports.
+
+## Phase 7 — Billing + usage metering
+
+Usage-based billing with plan tiers, limit tracking, and cost estimates.
+
+### Plans
+
+| Plan | Call minutes | Messages | Recordings |
+|------|-------------|----------|------------|
+| Free | 100 | 1,000 | 10 |
+| Starter | 1,000 | 10,000 | 100 |
+| Pro | 10,000 | 100,000 | 1,000 |
+
+### Admin API
+
+```
+GET  /v1/admin/apps/:appId/billing     — usage, limits, estimated cost
+PATCH /v1/admin/apps/:appId/plan       — { "plan": "starter" }
+GET  /v1/admin/billing/plans           — plan definitions
+```
+
+Webhook: `billing.threshold` — fired when usage exceeds 80% of plan limits.
+
+### Dashboard
+
+**Billing** tab — usage vs limits, plan selector, estimated invoice.
+
 ## SFU voice + group calls (reference)
 
 The SDK routes voice through **mediasoup** when `SFU_URL` is configured and `mediaMode` is `auto` or `sfu`.
@@ -367,4 +416,6 @@ media-sfu → mediasoup router/transports/producers
 | Video + screen share + group video | Done |
 | Call recording + recording.ready events | Done |
 | Transcription + AI summaries | Done |
+| Call quality metrics + observability | Done |
+| Billing + usage metering | Done |
 | npm publish + cloud deploy | Next |
