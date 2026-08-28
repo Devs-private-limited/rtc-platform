@@ -158,6 +158,36 @@ const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
 const ok = timingSafeEqual(Buffer.from(expected), Buffer.from(req.headers["x-rtc-signature"]));
 ```
 
+## Call sessions
+
+Each 1:1 call is recorded as a row in `call_sessions`, driven by the same `call.*` events.
+This is the record voice billing is derived from.
+
+| Status | Meaning |
+|--------|---------|
+| `ringing` | Invite sent, not yet answered |
+| `connected` | Callee accepted, call in progress |
+| `ended` | Either side hung up |
+| `rejected` | Callee declined |
+| `abandoned` | Connection dropped without a hangup |
+
+**Billable duration runs from answer to hangup** — time spent ringing is excluded.
+If a socket drops mid-call the session is closed automatically with
+`end_reason = disconnected`, so a lost connection can't leave a call billing forever.
+
+```bash
+curl "http://localhost:4000/v1/admin/apps/demo-app/calls?status=ended" \
+  -H "x-admin-key: dev-admin-key"
+
+curl http://localhost:4000/v1/admin/apps/demo-app/calls/stats \
+  -H "x-admin-key: dev-admin-key"
+# { "totalCalls": 3, "connectedCalls": 2, "totalDurationSeconds": 5,
+#   "participantSeconds": 10, "participantMinutes": 0.17, ... }
+```
+
+`participantSeconds` is the exact figure to bill on; `participantMinutes` is the same value
+as fractional minutes. Group (SFU) voice is not yet tracked as sessions — see the roadmap.
+
 ## Phase 3 — App registry + infrastructure
 
 ### 1. Start infrastructure
@@ -223,6 +253,9 @@ Output: `packages/sdk/dist` (ESM + CJS + types). See `packages/sdk/README.md` fo
 | `DELETE /v1/admin/apps/:appId/webhooks/:id` | Remove webhook |
 | `GET /v1/admin/apps/:appId/events` | Call/message event log (`?type=&limit=`) |
 | `GET /v1/admin/apps/:appId/usage` | Event counts per type |
+| `GET /v1/admin/apps/:appId/calls` | Call history (`?status=&userId=&limit=`) |
+| `GET /v1/admin/apps/:appId/calls/stats` | Call totals + participant minutes |
+| `GET /v1/admin/apps/:appId/calls/:callId` | Single call detail |
 | `WS /ws?token=` | Signaling (chat, calls, SFU producer discovery) |
 | `POST /v1/rooms/:id/join` | SFU — join media room |
 

@@ -11,6 +11,7 @@ import type {
 } from "@rtc/protocol";
 import { verifyToken, issueToken } from "./auth.js";
 import { verifyAppCredentials, seedDemoApp } from "./apps.js";
+import { endActiveCallsForUser, trackCallEvent } from "./calls.js";
 import { getPlatformConfig } from "./config.js";
 import { closeDb, getPool, runMigrations } from "./db.js";
 import { loadSignalingEnv } from "./env.js";
@@ -19,6 +20,7 @@ import { getIceConfig } from "./ice.js";
 import { MessageRelay } from "./relay.js";
 import { rateLimit } from "./rate-limit.js";
 import { registerAdminRoutes } from "./routes/admin.js";
+import { registerCallRoutes } from "./routes/calls.js";
 import { registerEventRoutes } from "./routes/events.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { dispatchEvent } from "./webhooks.js";
@@ -45,6 +47,7 @@ await app.register(cors, { origin: true });
 await registerAdminRoutes(app);
 await registerWebhookRoutes(app);
 await registerEventRoutes(app);
+await registerCallRoutes(app);
 
 let rooms: RoomStore = new MemoryRoomStore();
 let presence: PresenceStore = new MemoryPresenceStore();
@@ -186,7 +189,10 @@ wss.on("connection", (ws, req) => {
         send,
         sendToUser: (targetUserId, serverMessage) =>
           relay.sendToUser(targetUserId, serverMessage),
-        dispatch: (type, payload) => void dispatchEvent(claims.appId, type, payload),
+        dispatch: (type, payload) => {
+          void dispatchEvent(claims.appId, type, payload);
+          void trackCallEvent(claims.appId, type, payload);
+        },
       });
     } catch {
       send(ws, { type: "error", payload: { message: "Invalid message format" } });
@@ -197,6 +203,7 @@ wss.on("connection", (ws, req) => {
     sockets.delete(userId);
     void (async () => {
       await presence.setOffline(userId);
+      await endActiveCallsForUser(claims.appId, userId);
       const leftRooms = await rooms.leaveAll(userId);
       for (const roomId of leftRooms) {
         const members = await rooms.getMembers(roomId);
