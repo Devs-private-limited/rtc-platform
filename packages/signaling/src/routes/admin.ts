@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { createApp, listApps } from "../apps.js";
 
-function requireAdmin(req: FastifyRequest, reply: FastifyReply) {
+export function requireAdmin(req: FastifyRequest, reply: FastifyReply) {
   const key = req.headers["x-admin-key"];
   const expected = process.env.ADMIN_API_KEY || "dev-admin-key";
   if (key !== expected) {
