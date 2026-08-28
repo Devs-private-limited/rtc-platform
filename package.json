@@ -5,7 +5,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n signal,sfu,demo -c cyan,yellow,magenta \"npm run dev -w @rtc/signaling\" \"npm run dev -w @rtc/media-sfu\" \"npm run dev -w @rtc/demo\"",
+    "dev": "concurrently -n signal,sfu,demo,dash -c cyan,yellow,magenta,green \"npm run dev -w @rtc/signaling\" \"npm run dev -w @rtc/media-sfu\" \"npm run dev -w @rtc/demo\" \"npm run dev -w @rtc/dashboard\"",
     "dev:infra": "docker compose up -d postgres redis coturn",
     "dev:stack": "docker compose up -d",
     "dev:signaling": "npm run dev -w @rtc/signaling",

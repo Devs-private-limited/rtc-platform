@@ -11,6 +11,8 @@ export function getPlatformConfig(): PlatformConfig {
       chat: true,
       voiceP2P: true,
       voiceSfu: Boolean(sfuUrl),
+      videoP2P: true,
+      videoSfu: Boolean(sfuUrl),
     },
   };
 }

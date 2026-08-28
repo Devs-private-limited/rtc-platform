@@ -1,0 +1,4 @@
+ALTER TABLE recordings ADD COLUMN IF NOT EXISTS storage_path TEXT;
+ALTER TABLE recordings ADD COLUMN IF NOT EXISTS transcript TEXT;
+ALTER TABLE recordings ADD COLUMN IF NOT EXISTS summary TEXT;
+ALTER TABLE recordings ADD COLUMN IF NOT EXISTS intelligence_status VARCHAR(32) NOT NULL DEFAULT 'pending';

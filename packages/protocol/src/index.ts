@@ -9,7 +9,8 @@ export type ClientMessageType =
   | "webrtc_offer"
   | "webrtc_answer"
   | "ice_candidate"
-  | "sfu_producer";
+  | "sfu_producer"
+  | "recording_ready";
 
 export type ServerMessageType =
   | "connected"
@@ -25,6 +26,9 @@ export type ServerMessageType =
   | "webrtc_answer"
   | "ice_candidate"
   | "sfu_producer"
+  | "recording_ack"
+  | "transcript_ready"
+  | "summary_ready"
   | "call_state"
   | "error";
 
@@ -64,10 +68,13 @@ export interface RoomMessagePayload {
   sentAt: number;
 }
 
+export type CallType = "voice" | "video";
+
 export interface CallInvitePayload {
   roomId: string;
   toUserId: string;
   callId: string;
+  callType?: CallType;
 }
 
 export interface CallPeerPayload {
@@ -75,6 +82,7 @@ export interface CallPeerPayload {
   fromUserId: string;
   toUserId: string;
   roomId: string;
+  callType?: CallType;
 }
 
 export interface SessionDescriptionInit {
@@ -110,6 +118,37 @@ export interface SfuProducerPayload {
   producerId: string;
   fromUserId: string;
   toUserId?: string;
+  kind?: "audio" | "video";
+  source?: "camera" | "screen";
+}
+
+export interface RecordingReadyPayload {
+  callId?: string;
+  roomId: string;
+  durationMs: number;
+  sizeBytes: number;
+  mimeType: string;
+}
+
+export interface RecordingAckPayload {
+  recordingId: string;
+  roomId: string;
+  callId?: string;
+}
+
+export interface TranscriptReadyPayload {
+  recordingId: string;
+  roomId: string;
+  callId?: string;
+  transcript: string;
+}
+
+export interface SummaryReadyPayload {
+  recordingId: string;
+  roomId: string;
+  callId?: string;
+  summary: string;
+  transcript: string;
 }
 
 export interface TokenRequest {
@@ -148,5 +187,7 @@ export interface PlatformConfig extends IceConfigResponse {
     chat: boolean;
     voiceP2P: boolean;
     voiceSfu: boolean;
+    videoP2P: boolean;
+    videoSfu: boolean;
   };
 }

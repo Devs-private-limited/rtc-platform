@@ -5,4 +5,4 @@ export {
   fetchIceConfig,
   DEFAULT_STUN_SERVERS,
 } from "./RTCExpress.js";
-export type { RTCInitOptions, RTCEvents, MediaMode } from "./types.js";
+export type { RTCInitOptions, RTCEvents, MediaMode, CallOptions, CallType } from "./types.js";

@@ -1,4 +1,4 @@
-import type { IceServerConfig } from "@rtc/protocol";
+import type { CallType, IceServerConfig } from "@rtc/protocol";
 import type { ClientMessage, ServerMessage } from "@rtc/protocol";
 
 export type MediaMode = "p2p" | "sfu" | "auto";
@@ -10,6 +10,44 @@ export interface RTCInitOptions {
   token: string;
   /** p2p = direct WebRTC, sfu = mediasoup server, auto = use SFU when available */
   mediaMode?: MediaMode;
+}
+
+export interface CallOptions {
+  callType?: CallType;
+}
+
+export interface RemoteTrackEvent {
+  producerId: string;
+  userId: string;
+  kind: "audio" | "video";
+  source?: "camera" | "screen" | "microphone";
+  stream: MediaStream;
+}
+
+export interface RecordingReadyEvent {
+  recordingId?: string;
+  callId?: string;
+  roomId: string;
+  blob: Blob;
+  url: string;
+  durationMs: number;
+  sizeBytes: number;
+  mimeType: string;
+}
+
+export interface TranscriptReadyEvent {
+  recordingId: string;
+  roomId: string;
+  callId?: string;
+  transcript: string;
+}
+
+export interface SummaryReadyEvent {
+  recordingId: string;
+  roomId: string;
+  callId?: string;
+  summary: string;
+  transcript: string;
 }
 
 export interface RTCEvents {
@@ -27,10 +65,19 @@ export interface RTCEvents {
       peerUserId: string;
       roomId: string;
       mediaMode?: MediaMode;
+      callType?: CallType;
     },
   ];
   voiceRoomJoined: [{ roomId: string; mediaMode: MediaMode }];
   voiceRoomLeft: [{ roomId: string }];
+  videoRoomJoined: [{ roomId: string; mediaMode: MediaMode }];
+  videoRoomLeft: [{ roomId: string }];
+  localStream: [{ stream: MediaStream | null }];
+  remoteTrack: [RemoteTrackEvent];
+  recordingStarted: [{ callId?: string; roomId: string }];
+  recordingReady: [RecordingReadyEvent];
+  transcriptReady: [TranscriptReadyEvent];
+  summaryReady: [SummaryReadyEvent];
   error: [{ message: string }];
 }
 
@@ -71,4 +118,4 @@ export async function fetchIceConfig(
   return fetchPlatformConfig(serverUrl);
 }
 
-export type { ClientMessage, ServerMessage };
+export type { ClientMessage, ServerMessage, CallType };

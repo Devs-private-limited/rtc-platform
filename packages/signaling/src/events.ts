@@ -38,7 +38,7 @@ export async function recordEvent(
 
 export async function listEvents(
   appId: string,
-  opts: { limit?: number; type?: string } = {}
+  opts: { limit?: number; type?: string; from?: string; to?: string } = {}
 ): Promise<EventRecord[]> {
   const db = getPool();
   if (!db) throw new Error("Database not configured");
@@ -49,6 +49,14 @@ export async function listEvents(
   if (opts.type) {
     params.push(opts.type);
     query += ` AND type = $${params.length}`;
+  }
+  if (opts.from) {
+    params.push(opts.from);
+    query += ` AND created_at >= $${params.length}`;
+  }
+  if (opts.to) {
+    params.push(opts.to);
+    query += ` AND created_at <= $${params.length}`;
   }
   params.push(limit);
   query += ` ORDER BY created_at DESC LIMIT $${params.length}`;

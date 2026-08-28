@@ -67,6 +67,100 @@ export async function deleteWebhook(appId: string, id: string): Promise<boolean>
   return (result.rowCount ?? 0) > 0;
 }
 
+export interface WebhookDelivery {
+  id: number;
+  webhookId: string;
+  eventId: number | null;
+  eventType: string | null;
+  statusCode: number | null;
+  success: boolean;
+  error: string | null;
+  attempt: number;
+  createdAt: string;
+}
+
+export async function listWebhookDeliveries(
+  appId: string,
+  opts: { webhookId?: string; limit?: number } = {}
+): Promise<WebhookDelivery[]> {
+  const db = getPool();
+  if (!db) throw new Error("Database not configured");
+
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const params: unknown[] = [appId];
+  let query = `
+    SELECT wd.id, wd.webhook_id, wd.event_id, e.type AS event_type,
+           wd.status_code, wd.success, wd.error, wd.attempt, wd.created_at
+    FROM webhook_deliveries wd
+    JOIN webhooks w ON w.id = wd.webhook_id
+    LEFT JOIN events e ON e.id = wd.event_id
+    WHERE w.app_id = $1`;
+
+  if (opts.webhookId) {
+    params.push(opts.webhookId);
+    query += ` AND wd.webhook_id = $${params.length}`;
+  }
+  params.push(limit);
+  query += ` ORDER BY wd.created_at DESC LIMIT $${params.length}`;
+
+  const result = await db.query(query, params);
+  return result.rows.map((row) => ({
+    id: row.id,
+    webhookId: row.webhook_id,
+    eventId: row.event_id,
+    eventType: row.event_type,
+    statusCode: row.status_code,
+    success: row.success,
+    error: row.error,
+    attempt: row.attempt,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function updateWebhook(
+  appId: string,
+  id: string,
+  updates: { active?: boolean; url?: string; eventTypes?: string[] }
+) {
+  const db = getPool();
+  if (!db) throw new Error("Database not configured");
+
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (updates.active !== undefined) {
+    sets.push(`active = $${idx++}`);
+    params.push(updates.active);
+  }
+  if (updates.url) {
+    sets.push(`url = $${idx++}`);
+    params.push(updates.url);
+  }
+  if (updates.eventTypes) {
+    sets.push(`event_types = $${idx++}`);
+    params.push(updates.eventTypes);
+  }
+  if (!sets.length) return null;
+
+    params.push(id, appId);
+    const result = await db.query(
+      `UPDATE webhooks SET ${sets.join(", ")} WHERE id = $${idx} AND app_id = $${idx + 1}
+     RETURNING id, app_id, url, event_types, active, created_at`,
+      params
+    );
+  if (!result.rowCount) return null;
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    appId: row.app_id,
+    url: row.url,
+    eventTypes: row.event_types,
+    active: row.active,
+    createdAt: row.created_at,
+  } satisfies WebhookRecord;
+}
+
 async function getActiveWebhooksForEvent(appId: string, type: string) {
   const db = getPool();
   if (!db) return [];

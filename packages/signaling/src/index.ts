@@ -21,7 +21,10 @@ import { rateLimit } from "./rate-limit.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerEventRoutes } from "./routes/events.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
+import { registerRecordingRoutes } from "./routes/recordings.js";
+import { registerRecordingUploadRoutes } from "./routes/recording-upload.js";
 import { dispatchEvent } from "./webhooks.js";
+import { setRecordingsDir, ensureRecordingsDir } from "./recordings.js";
 import { MemoryPresenceStore, MemoryRoomStore } from "./store/memory.js";
 import {
   createRedisClient,
@@ -31,6 +34,8 @@ import {
 import type { PresenceStore, RoomStore } from "./store/types.js";
 
 const env = loadSignalingEnv();
+setRecordingsDir(env.recordingsDir);
+await ensureRecordingsDir();
 
 if (env.databaseUrl) {
   await runMigrations();
@@ -45,6 +50,7 @@ await app.register(cors, { origin: true });
 await registerAdminRoutes(app);
 await registerWebhookRoutes(app);
 await registerEventRoutes(app);
+await registerRecordingRoutes(app);
 
 let rooms: RoomStore = new MemoryRoomStore();
 let presence: PresenceStore = new MemoryPresenceStore();
@@ -128,6 +134,16 @@ app.post<{ Body: TokenRequest }>("/v1/token", async (req, reply) => {
   return response;
 });
 
+const userNotifier = {
+  sendToUser: async (_userId: string, _message: ServerMessage) => false,
+};
+
+await registerRecordingUploadRoutes(app, {
+  env,
+  dispatch: dispatchEvent,
+  sendToUser: (userId, message) => userNotifier.sendToUser(userId, message),
+});
+
 await app.ready();
 const wss = new WebSocketServer({ server: app.server, path: "/ws" });
 
@@ -148,6 +164,8 @@ const relay = new MessageRelay(
   send
 );
 await relay.start();
+
+userNotifier.sendToUser = (userId, message) => relay.sendToUser(userId, message);
 
 wss.on("connection", (ws, req) => {
   const url = new URL(req.url || "", `http://${req.headers.host}`);

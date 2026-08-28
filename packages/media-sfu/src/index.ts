@@ -74,14 +74,14 @@ app.post<{
 }>("/v1/rooms/:roomId/transports/:transportId/produce", async (req, reply) => {
   const peerId = req.body?.peerId?.trim();
   const kind = req.body?.kind;
-  if (!peerId || kind !== "audio" || !req.body?.rtpParameters) {
-    return reply.status(400).send({ error: "peerId, kind=audio, rtpParameters required" });
+  if (!peerId || (kind !== "audio" && kind !== "video") || !req.body?.rtpParameters) {
+    return reply.status(400).send({ error: "peerId, kind=audio|video, rtpParameters required" });
   }
   const producer = await sfu.produce(
     req.params.roomId,
     peerId,
     req.params.transportId,
-    "audio",
+    kind,
     req.body.rtpParameters as never
   );
   return { producerId: producer.id };

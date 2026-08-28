@@ -28,8 +28,121 @@ npm run dev          # signaling + SFU + demo
 - Signaling: http://localhost:4000
 - SFU: http://localhost:4100
 - Demo: http://localhost:5180
+- **Developer Dashboard**: http://localhost:5181
 
-## Phase 4 — SFU voice + group calls
+## Phase 2 — Developer SaaS
+
+Self-service dashboard for projects, webhooks, events, and usage metering.
+
+### Dashboard
+
+```bash
+npm run dev   # starts signaling + SFU + demo + dashboard
+```
+
+Open http://localhost:5181 — sign in with `dev-admin-key` (from `.env`).
+
+| Tab | What it shows |
+|-----|---------------|
+| Overview | Messages, call minutes, event counts |
+| Events | Live event log |
+| Webhooks | Register, pause, delete webhooks |
+| Deliveries | Webhook delivery audit trail |
+| Quick start | SDK integration snippet |
+
+See [docs/QUICKSTART.md](docs/QUICKSTART.md) for a 5-minute integration guide.
+
+### Admin API (dashboard uses these)
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/admin/apps` | Create project |
+| `GET /v1/admin/apps` | List projects |
+| `POST /v1/admin/apps/:id/webhooks` | Register webhook |
+| `GET /v1/admin/apps/:id/webhook-deliveries` | Delivery log |
+| `GET /v1/admin/apps/:id/metering` | Usage (messages, call minutes) |
+| `GET /v1/admin/apps/:id/events` | Event log |
+
+All admin routes require header `x-admin-key`.
+
+### Docker full stack
+
+```bash
+npm run dev:stack
+```
+
+Runs postgres, redis, coturn, signaling, and media-sfu.
+
+## Phase 3 — Video, screen share & group video
+
+Web-only (no React Native required). Test in the demo at http://localhost:5180.
+
+### SDK — video APIs
+
+```ts
+await rtc.videoCallUser("user_b");           // 1:1 video call
+await rtc.callUser("user_b", { callType: "video" });
+
+await rtc.joinVideoRoom();                   // group video (SFU)
+rtc.leaveVideoRoom();
+
+rtc.muteCamera(true);
+await rtc.shareScreen();
+await rtc.stopScreenShare();
+
+rtc.on("localStream", ({ stream }) => { /* attach to <video> */ });
+rtc.on("remoteTrack", ({ stream, userId, kind }) => { /* attach remote video */ });
+```
+
+### Demo features
+- **Video call** — 1:1 with camera
+- **Group video** — multi-user video via SFU
+- **Screen share** — during call or group video
+- **Cam off / Mute** — toggle camera and microphone
+
+## Phase 4 — Call recording
+
+Record calls and media sessions locally, notify the platform when done.
+
+### SDK
+
+```ts
+rtc.startRecording();                        // during active call or group media
+const { url, blob, durationMs } = await rtc.stopRecording();  // download via url
+
+rtc.on("recordingStarted", () => { /* UI indicator */ });
+rtc.on("recordingReady", ({ url, blob, durationMs }) => {
+  // blob = WebM file, url = object URL for download
+});
+```
+
+Recording metadata is sent to signaling as `recording.ready` (webhook when DB is configured).
+
+### Demo
+During a call, click **Record** → **Stop & save** → download link appears in the log. Transcript and AI summary appear shortly after (demo text without `OPENAI_API_KEY`).
+
+## Phase 5 — Transcription + AI summaries
+
+After a recording stops, the SDK uploads audio to signaling. The server transcribes (OpenAI Whisper) and generates a summary (GPT).
+
+### Server setup
+
+```bash
+# packages/signaling/.env
+OPENAI_API_KEY=sk-...   # optional — demo transcript/summary without it
+```
+
+Webhook events: `recording.uploaded`, `transcript.ready`, `summary.ready`
+
+### SDK
+
+```ts
+rtc.on("recordingReady", ({ recordingId, url }) => { /* download */ });
+rtc.on("transcriptReady", ({ recordingId, transcript }) => { /* show captions */ });
+rtc.on("summaryReady", ({ recordingId, summary }) => { /* meeting notes */ });
+```
+
+## SFU voice + group calls (reference)
 
 The SDK routes voice through **mediasoup** when `SFU_URL` is configured and `mediaMode` is `auto` or `sfu`.
 
@@ -250,5 +363,8 @@ media-sfu → mediasoup router/transports/producers
 | mediasoup SFU service | Done |
 | SDK ↔ SFU voice path | Done |
 | Group voice (SFU) | Done |
-| Production hardening | Done |
+| Developer dashboard + metering | Done |
+| Video + screen share + group video | Done |
+| Call recording + recording.ready events | Done |
+| Transcription + AI summaries | Done |
 | npm publish + cloud deploy | Next |

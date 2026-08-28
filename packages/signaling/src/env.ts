@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import path from "path";
 
 const DEV_JWT_SECRET = "dev-secret-change-in-production";
 const DEV_ADMIN_KEY = "dev-admin-key";
@@ -13,6 +14,8 @@ export interface SignalingEnv {
   redisUrl: string | null;
   databaseUrl: string | null;
   sfuUrl: string | null;
+  openaiApiKey: string | null;
+  recordingsDir: string;
 }
 
 export function loadSignalingEnv(): SignalingEnv {
@@ -44,5 +47,7 @@ export function loadSignalingEnv(): SignalingEnv {
     redisUrl: process.env.REDIS_URL || null,
     databaseUrl: process.env.DATABASE_URL || null,
     sfuUrl: process.env.SFU_URL || null,
+    openaiApiKey: process.env.OPENAI_API_KEY || null,
+    recordingsDir: process.env.RECORDINGS_DIR || path.join(process.cwd(), "data", "recordings"),
   };
 }
