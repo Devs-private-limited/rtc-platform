@@ -13,6 +13,7 @@ import type {
 } from "@rtc/protocol";
 import type { RoomStore } from "./store/types.js";
 import { joinMediaSession, leaveMediaSession } from "./media-sessions.js";
+import { MAX_MESSAGE_LENGTH, saveMessage } from "./messages.js";
 import { endCallSession, startCallSession } from "./metering.js";
 import { saveRecording } from "./recordings.js";
 import { saveQualityReport } from "./quality.js";
@@ -90,7 +91,22 @@ export async function handleClientMessage(ctx: HandlerContext) {
     }
 
     case "send_message": {
-      const { roomId, text } = message.payload as { roomId: string; text: string };
+      const { roomId, text, clientMsgId } = message.payload as {
+        roomId: string;
+        text: string;
+        clientMsgId?: string;
+      };
+      if (typeof text !== "string" || !text.length) {
+        ctx.send(ws, { type: "error", payload: { message: "text is required" } });
+        return;
+      }
+      if (text.length > MAX_MESSAGE_LENGTH) {
+        ctx.send(ws, {
+          type: "error",
+          payload: { message: `text exceeds ${MAX_MESSAGE_LENGTH} characters` },
+        });
+        return;
+      }
       if (!(await ctx.rooms.isMember(roomId, userId))) {
         ctx.send(ws, { type: "error", payload: { message: "Join the room first" } });
         return;
@@ -100,6 +116,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
         fromUserId: userId,
         text,
         sentAt: Date.now(),
+        clientMsgId,
       };
       const members = await ctx.rooms.getMembers(roomId);
       for (const memberId of members) {
@@ -107,6 +124,9 @@ export async function handleClientMessage(ctx: HandlerContext) {
           await ctx.sendToUser(memberId, { type: "message", payload });
         }
       }
+      // Text is persisted here rather than routed through dispatch, so chat
+      // content stays out of the event log and customer webhook payloads.
+      void saveMessage(ctx.claims.appId, roomId, userId, text, clientMsgId);
       ctx.dispatch("message.sent", { roomId, fromUserId: userId });
       void maybeDispatchBillingAlert(ctx.claims.appId, (type, payload) =>
         ctx.dispatch(type, payload)

@@ -3,6 +3,7 @@ import type {
   CallType,
   ClientMessage,
   MediaParticipantPayload,
+  MessageHistoryPage,
   RoomMessagePayload,
   ServerMessage,
   SfuProducerPayload,
@@ -277,7 +278,40 @@ export class RTCExpress extends EventEmitter {
 
   sendMessage(text: string) {
     if (!this.roomId) throw new Error("Join a room first");
-    this.send({ type: "send_message", payload: { roomId: this.roomId, text } });
+    const clientMsgId = randomId();
+    this.send({ type: "send_message", payload: { roomId: this.roomId, text, clientMsgId } });
+    return clientMsgId;
+  }
+
+  /**
+   * Loads stored chat history, newest first. Call after the `roomJoined` event —
+   * the server only serves history to current room members.
+   *
+   * Page backwards with the returned `nextCursor`:
+   * ```ts
+   * const page = await rtc.getMessageHistory(roomId);
+   * const older = await rtc.getMessageHistory(roomId, { before: page.nextCursor });
+   * ```
+   */
+  async getMessageHistory(
+    roomId: string,
+    opts: { before?: string | null; limit?: number } = {}
+  ): Promise<MessageHistoryPage> {
+    const params = new URLSearchParams();
+    if (opts.before) params.set("before", opts.before);
+    if (opts.limit) params.set("limit", String(opts.limit));
+    const query = params.toString();
+
+    const res = await fetch(
+      `${this.serverUrl}/v1/rooms/${encodeURIComponent(roomId)}/messages${query ? `?${query}` : ""}`,
+      { headers: { Authorization: `Bearer ${this.token}` } }
+    );
+
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `Failed to load history (${res.status})`);
+    }
+    return (await res.json()) as MessageHistoryPage;
   }
 
   async joinVoiceRoom() {
