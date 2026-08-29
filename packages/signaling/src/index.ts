@@ -27,6 +27,7 @@ import { registerQualityRoutes } from "./routes/quality.js";
 import { registerBillingRoutes } from "./routes/billing.js";
 import { registerMediaSessionRoutes } from "./routes/media-sessions.js";
 import { endMediaSessionsForUser } from "./media-sessions.js";
+import { registerMessageRoutes } from "./routes/messages.js";
 import { dispatchEvent } from "./webhooks.js";
 import { setRecordingsDir, ensureRecordingsDir } from "./recordings.js";
 import { MemoryPresenceStore, MemoryRoomStore } from "./store/memory.js";
@@ -71,6 +72,10 @@ if (redisPub && redisSub) {
 } else {
   console.log("Running in single-node mode (set REDIS_URL for scale)");
 }
+
+// Registered here rather than with the other routes so it binds the final
+// room store, after Redis has had its chance to replace the in-memory one.
+await registerMessageRoutes(app, { jwtSecret: env.jwtSecret, rooms });
 
 async function checkRedis() {
   if (!redisPub) return true;

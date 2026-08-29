@@ -78,6 +78,8 @@ export interface JoinRoomPayload {
 export interface SendMessagePayload {
   roomId: string;
   text: string;
+  /** Client-assigned id echoed back on delivery, for dedupe against history. */
+  clientMsgId?: string;
 }
 
 export interface RoomMessagePayload {
@@ -85,6 +87,23 @@ export interface RoomMessagePayload {
   fromUserId: string;
   text: string;
   sentAt: number;
+  clientMsgId?: string;
+}
+
+/** A message as returned by the history endpoint. */
+export interface StoredMessage {
+  id: string;
+  roomId: string;
+  fromUserId: string;
+  text: string;
+  clientMsgId: string | null;
+  sentAt: string;
+}
+
+export interface MessageHistoryPage {
+  messages: StoredMessage[];
+  /** Pass as `before` to fetch the next (older) page; null when exhausted. */
+  nextCursor: string | null;
 }
 
 export type CallType = "voice" | "video";
