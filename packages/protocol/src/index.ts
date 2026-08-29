@@ -11,7 +11,9 @@ export type ClientMessageType =
   | "ice_candidate"
   | "sfu_producer"
   | "recording_ready"
-  | "call_quality_report";
+  | "call_quality_report"
+  | "join_media"
+  | "leave_media";
 
 export type ServerMessageType =
   | "connected"
@@ -31,7 +33,23 @@ export type ServerMessageType =
   | "transcript_ready"
   | "summary_ready"
   | "call_state"
+  | "media_participant_joined"
+  | "media_participant_left"
   | "error";
+
+/** Group media a participant can be in. Mirrors joinVoiceRoom / joinVideoRoom. */
+export type MediaKind = "voice" | "video";
+
+export interface JoinMediaPayload {
+  roomId: string;
+  kind: MediaKind;
+}
+
+export interface MediaParticipantPayload {
+  roomId: string;
+  userId: string;
+  kind: MediaKind;
+}
 
 export type CallState =
   | "idle"

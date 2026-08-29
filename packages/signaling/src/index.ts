@@ -25,6 +25,8 @@ import { registerRecordingRoutes } from "./routes/recordings.js";
 import { registerRecordingUploadRoutes } from "./routes/recording-upload.js";
 import { registerQualityRoutes } from "./routes/quality.js";
 import { registerBillingRoutes } from "./routes/billing.js";
+import { registerMediaSessionRoutes } from "./routes/media-sessions.js";
+import { endMediaSessionsForUser } from "./media-sessions.js";
 import { dispatchEvent } from "./webhooks.js";
 import { setRecordingsDir, ensureRecordingsDir } from "./recordings.js";
 import { MemoryPresenceStore, MemoryRoomStore } from "./store/memory.js";
@@ -55,6 +57,7 @@ await registerEventRoutes(app);
 await registerRecordingRoutes(app);
 await registerQualityRoutes(app);
 await registerBillingRoutes(app);
+await registerMediaSessionRoutes(app);
 
 let rooms: RoomStore = new MemoryRoomStore();
 let presence: PresenceStore = new MemoryPresenceStore();
@@ -219,6 +222,9 @@ wss.on("connection", (ws, req) => {
     sockets.delete(userId);
     void (async () => {
       await presence.setOffline(userId);
+      // Close group media before dropping room membership, so a lost socket
+      // can't leave the participant billing indefinitely.
+      await endMediaSessionsForUser(claims.appId, userId);
       const leftRooms = await rooms.leaveAll(userId);
       for (const roomId of leftRooms) {
         const members = await rooms.getMembers(roomId);

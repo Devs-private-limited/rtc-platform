@@ -2,6 +2,7 @@ import type {
   CallPeerPayload,
   CallType,
   ClientMessage,
+  MediaParticipantPayload,
   RoomMessagePayload,
   ServerMessage,
   SfuProducerPayload,
@@ -231,6 +232,12 @@ export class RTCExpress extends EventEmitter {
           void this.sfu.handleRemoteProducer(message.payload as SfuProducerPayload);
         }
         break;
+      case "media_participant_joined":
+        this.emit("mediaParticipantJoined", message.payload as MediaParticipantPayload);
+        break;
+      case "media_participant_left":
+        this.emit("mediaParticipantLeft", message.payload as MediaParticipantPayload);
+        break;
       case "recording_ack": {
         const payload = message.payload as {
           recordingId: string;
@@ -278,6 +285,7 @@ export class RTCExpress extends EventEmitter {
     if (!this.sfuUrl) throw new Error("SFU not available. Start media-sfu service.");
     await this.getSfu().joinRoom(this.roomId, { announceToRoom: true, audio: true, video: false });
     this.inVoiceRoom = true;
+    this.send({ type: "join_media", payload: { roomId: this.roomId, kind: "voice" } });
     this.emit("voiceRoomJoined", { roomId: this.roomId, mediaMode: "sfu" });
     this.emitLocalStream();
     this.startQualityMonitoring();
@@ -292,6 +300,11 @@ export class RTCExpress extends EventEmitter {
     }
     this.inVoiceRoom = false;
     if (!this.inVideoRoom) this.stopQualityMonitoring();
+    // Still in the video room means still consuming group media — the billed
+    // session stays open until they leave that too.
+    if (roomId && !this.inVideoRoom) {
+      this.send({ type: "leave_media", payload: { roomId, kind: "voice" } });
+    }
     if (roomId) this.emit("voiceRoomLeft", { roomId });
   }
 
@@ -300,6 +313,7 @@ export class RTCExpress extends EventEmitter {
     if (!this.sfuUrl) throw new Error("SFU not available. Start media-sfu service.");
     await this.getSfu().joinRoom(this.roomId, { announceToRoom: true, audio: true, video: true });
     this.inVideoRoom = true;
+    this.send({ type: "join_media", payload: { roomId: this.roomId, kind: "video" } });
     this.emit("videoRoomJoined", { roomId: this.roomId, mediaMode: "sfu" });
     this.emitLocalStream();
     this.startQualityMonitoring();
@@ -312,7 +326,12 @@ export class RTCExpress extends EventEmitter {
     this.sfu = null;
     this.inVideoRoom = false;
     this.stopQualityMonitoring();
-    if (roomId) this.emit("videoRoomLeft", { roomId });
+    // Leaving video tears down the SFU transport, so any voice ends with it.
+    this.inVoiceRoom = false;
+    if (roomId) {
+      this.send({ type: "leave_media", payload: { roomId, kind: "video" } });
+      this.emit("videoRoomLeft", { roomId });
+    }
     this.emit("localStream", { stream: null });
   }
 

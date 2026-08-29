@@ -4,6 +4,7 @@ import type {
   CallPeerPayload,
   CallQualityReportPayload,
   ClientMessage,
+  JoinMediaPayload,
   RecordingReadyPayload,
   RoomMessagePayload,
   ServerMessage,
@@ -11,6 +12,7 @@ import type {
   WebRtcPayload,
 } from "@rtc/protocol";
 import type { RoomStore } from "./store/types.js";
+import { joinMediaSession, leaveMediaSession } from "./media-sessions.js";
 import { endCallSession, startCallSession } from "./metering.js";
 import { saveRecording } from "./recordings.js";
 import { saveQualityReport } from "./quality.js";
@@ -72,6 +74,10 @@ export async function handleClientMessage(ctx: HandlerContext) {
     case "leave_room": {
       const { roomId } = message.payload as { roomId: string };
       await ctx.rooms.leave(roomId, userId);
+      // Leaving the room ends any group media in it. Done as a direct call
+      // rather than a media.left event so subscribers aren't sent a delivery
+      // for someone who was never in media — the update matches no rows then.
+      void leaveMediaSession(ctx.claims.appId, roomId, userId, "left_room");
       const members = await ctx.rooms.getMembers(roomId);
       for (const memberId of members) {
         await ctx.sendToUser(memberId, {
@@ -205,6 +211,41 @@ export async function handleClientMessage(ctx: HandlerContext) {
           }
         }
       }
+      break;
+    }
+
+    case "join_media":
+    case "leave_media": {
+      const { roomId, kind } = message.payload as JoinMediaPayload;
+      if (!roomId) {
+        ctx.send(ws, { type: "error", payload: { message: "roomId is required" } });
+        return;
+      }
+      if (kind !== "voice" && kind !== "video") {
+        ctx.send(ws, { type: "error", payload: { message: "kind must be voice or video" } });
+        return;
+      }
+      if (!(await ctx.rooms.isMember(roomId, userId))) {
+        ctx.send(ws, { type: "error", payload: { message: "Join the room first" } });
+        return;
+      }
+
+      const joining = message.type === "join_media";
+      const members = (await ctx.rooms.getMembers(roomId)).filter((id) => id !== userId);
+      for (const memberId of members) {
+        await ctx.sendToUser(memberId, {
+          type: joining ? "media_participant_joined" : "media_participant_left",
+          payload: { roomId, userId, kind },
+        });
+      }
+
+      if (joining) {
+        void joinMediaSession(ctx.claims.appId, roomId, userId, kind);
+      } else {
+        void leaveMediaSession(ctx.claims.appId, roomId, userId, "left");
+      }
+      ctx.dispatch(joining ? "media.joined" : "media.left", { roomId, userId, kind });
+      void maybeDispatchBillingAlert(ctx.claims.appId, (type, p) => ctx.dispatch(type, p));
       break;
     }
 
