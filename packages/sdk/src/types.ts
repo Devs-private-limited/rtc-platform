@@ -82,6 +82,10 @@ export interface RTCEvents {
   voiceRoomLeft: [{ roomId: string }];
   videoRoomJoined: [{ roomId: string; mediaMode: MediaMode }];
   videoRoomLeft: [{ roomId: string }];
+  /** Another room member joined group voice or video. */
+  mediaParticipantJoined: [import("@rtc/protocol").MediaParticipantPayload];
+  /** Another room member left group voice or video. */
+  mediaParticipantLeft: [import("@rtc/protocol").MediaParticipantPayload];
   localStream: [{ stream: MediaStream | null }];
   remoteTrack: [RemoteTrackEvent];
   recordingStarted: [{ callId?: string; roomId: string }];

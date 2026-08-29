@@ -6,6 +6,8 @@ export const WEBHOOK_EVENT_TYPES = [
   "call.connected",
   "call.failed",
   "call.ended",
+  "media.joined",
+  "media.left",
   "recording.ready",
   "recording.uploaded",
   "transcript.ready",
