@@ -28,6 +28,7 @@ import { registerBillingRoutes } from "./routes/billing.js";
 import { registerMediaSessionRoutes } from "./routes/media-sessions.js";
 import { endMediaSessionsForUser } from "./media-sessions.js";
 import { registerMessageRoutes } from "./routes/messages.js";
+import { endActiveCallsForUser } from "./metering.js";
 import { dispatchEvent } from "./webhooks.js";
 import { setRecordingsDir, ensureRecordingsDir } from "./recordings.js";
 import { MemoryPresenceStore, MemoryRoomStore } from "./store/memory.js";
@@ -227,9 +228,10 @@ wss.on("connection", (ws, req) => {
     sockets.delete(userId);
     void (async () => {
       await presence.setOffline(userId);
-      // Close group media before dropping room membership, so a lost socket
-      // can't leave the participant billing indefinitely.
+      // Close group media and any in-progress call before dropping room
+      // membership, so a lost socket can't leave a session open indefinitely.
       await endMediaSessionsForUser(claims.appId, userId);
+      await endActiveCallsForUser(claims.appId, userId);
       const leftRooms = await rooms.leaveAll(userId);
       for (const roomId of leftRooms) {
         const members = await rooms.getMembers(roomId);

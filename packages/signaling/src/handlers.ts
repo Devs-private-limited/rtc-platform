@@ -182,8 +182,13 @@ export async function handleClientMessage(ctx: HandlerContext) {
           userId
         );
       } else if (message.type === "call_end") {
-        void endCallSession(ctx.claims.appId, payload.callId);
+        void endCallSession(ctx.claims.appId, payload.callId, "hangup");
         void maybeDispatchBillingAlert(ctx.claims.appId, (type, p) => ctx.dispatch(type, p));
+      } else if (message.type === "call_reject") {
+        // No session exists for a call that was never accepted, so this is a
+        // no-op in the normal case. It matters when the callee rejects a second
+        // invite for a call they had already answered.
+        void endCallSession(ctx.claims.appId, payload.callId, "rejected");
       }
       break;
     }
