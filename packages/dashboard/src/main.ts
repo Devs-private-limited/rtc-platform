@@ -113,7 +113,7 @@ async function renderHome() {
     </section>
     <section class="card">
       <h2>Links</h2>
-      <p class="muted">RTC demo: <a href="http://localhost:5180" target="_blank">localhost:5180</a> · Signaling: localhost:4000</p>
+      <p class="muted">RTC demo: <a href="${import.meta.env.DEV ? "http://localhost:5180" : "/demo/"}" target="_blank">open demo</a> · Signaling: ${window.location.origin}</p>
     </section>
   `;
 
@@ -458,7 +458,7 @@ async function renderQuickstart(el: HTMLElement, appId: string) {
         <li>Watch events and webhooks appear in this dashboard</li>
       </ol>
       <pre class="code">// 1. Server-side — issue token
-const res = await fetch("http://localhost:4000/v1/token", {
+const res = await fetch("${window.location.origin}/v1/token", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -474,7 +474,7 @@ import { RTCExpress } from "@rtc/sdk";
 
 const rtc = new RTCExpress();
 await rtc.init({
-  serverUrl: "http://localhost:4000",
+  serverUrl: "${window.location.origin}",
   appId: "${appId}",
   userId: "user_123",
   token,
