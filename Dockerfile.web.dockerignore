@@ -1,0 +1,14 @@
+# Build context for Dockerfile.web only. The root .dockerignore excludes
+# packages/demo because the signaling and SFU images don't need it — but the
+# frontend build does, so this file overrides it for that build.
+node_modules
+dist
+.git
+.github
+*.log
+.env
+.env.*
+docs
+packages/media-sfu
+packages/signaling
+packages/sdk/dist

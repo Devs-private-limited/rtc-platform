@@ -1,0 +1,66 @@
+# Single origin for the whole platform.
+#
+# Serving the frontends and the API from one hostname is deliberate: the SDK
+# and dashboard use relative URLs, so this avoids CORS entirely, and it means
+# the WebSocket is wss:// on the same origin as the page — a browser refuses a
+# ws:// connection from an https:// page, and blocks getUserMedia outright
+# without TLS.
+#
+# DOMAIN and TLS_EMAIL come from .env.production. Caddy provisions and renews
+# the Let's Encrypt certificate on its own.
+
+{
+	email {$TLS_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Signaling REST API
+	handle /v1/* {
+		reverse_proxy signaling:4000
+	}
+
+	# Health/readiness passthrough for uptime checks
+	handle /health {
+		reverse_proxy signaling:4000
+	}
+	handle /ready {
+		reverse_proxy signaling:4000
+	}
+
+	# WebSocket signaling. Caddy upgrades automatically; the long timeouts keep
+	# idle call-setup sockets from being cut.
+	handle /ws* {
+		reverse_proxy signaling:4000 {
+			transport http {
+				dial_timeout 10s
+				read_timeout 24h
+				write_timeout 24h
+			}
+		}
+	}
+
+	# mediasoup SFU signalling REST (transport/produce/consume negotiation only —
+	# the actual media flows over UDP straight to the VM, not through Caddy).
+	# The SDK calls ${SFU_URL}/v1/rooms/..., so the /sfu prefix is stripped here.
+	# media-sfu runs on the host network, hence host-gateway rather than a
+	# service name.
+	handle_path /sfu/* {
+		reverse_proxy host.docker.internal:4100
+	}
+
+	# Developer dashboard at the root
+	handle /demo/* {
+		uri strip_prefix /demo
+		root * /srv/demo
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle {
+		root * /srv/dashboard
+		try_files {path} /index.html
+		file_server
+	}
+}

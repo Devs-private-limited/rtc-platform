@@ -1,4 +1,11 @@
-FROM node:22-alpine AS builder
+# Debian (glibc), not Alpine (musl), on purpose.
+#
+# mediasoup ships a prebuilt `mediasoup-worker` binary linked against glibc. On
+# Alpine it fails to execute, and the postinstall falls back to compiling the
+# worker from source — which needs Python, pip and a C++ toolchain that aren't
+# in the image, so the build fails outright. Debian slim runs the prebuilt
+# binary as-is, which also keeps the build fast enough for a small VM.
+FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/media-sfu/package.json packages/media-sfu/
@@ -6,7 +13,7 @@ RUN npm ci
 COPY packages/media-sfu packages/media-sfu
 RUN npm run build -w @rtc/media-sfu
 
-FROM node:22-alpine
+FROM node:22-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
@@ -16,6 +23,8 @@ COPY --from=builder /app/packages/media-sfu/dist packages/media-sfu/dist
 WORKDIR /app/packages/media-sfu
 EXPOSE 4100
 EXPOSE 40000-40100/udp
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -qO- http://localhost:4100/health || exit 1
+# Uses node's global fetch rather than wget/curl, neither of which is in the
+# slim image — avoids installing extra packages just for a healthcheck.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://localhost:4100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "dist/index.js"]
