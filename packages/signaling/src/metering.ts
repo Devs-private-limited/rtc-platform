@@ -9,6 +9,7 @@ export interface CallSession {
   startedAt: string;
   endedAt: string | null;
   durationMs: number | null;
+  endReason: string | null;
 }
 
 interface MemoryCallSession {
@@ -20,6 +21,7 @@ interface MemoryCallSession {
   startedAt: string;
   endedAt: string | null;
   durationMs: number | null;
+  endReason: string | null;
 }
 
 interface MemoryEvent {
@@ -59,19 +61,21 @@ export async function startCallSession(
       startedAt: new Date().toISOString(),
       endedAt: null,
       durationMs: null,
+      endReason: null,
     });
   }
 }
 
-export async function endCallSession(appId: string, callId: string) {
+export async function endCallSession(appId: string, callId: string, reason = "hangup") {
   const db = getPool();
   if (db) {
     await db.query(
       `UPDATE call_sessions
        SET ended_at = NOW(),
-           duration_ms = EXTRACT(EPOCH FROM (NOW() - started_at))::int * 1000
+           duration_ms = EXTRACT(EPOCH FROM (NOW() - started_at))::int * 1000,
+           end_reason = $3
        WHERE app_id = $1 AND call_id = $2 AND ended_at IS NULL`,
-      [appId, callId]
+      [appId, callId, reason]
     );
     return;
   }
@@ -81,6 +85,43 @@ export async function endCallSession(appId: string, callId: string) {
     const endedAt = new Date();
     session.endedAt = endedAt.toISOString();
     session.durationMs = endedAt.getTime() - new Date(session.startedAt).getTime();
+    session.endReason = reason;
+  }
+}
+
+/**
+ * Closes every call the user was still on. A participant who crashes or loses
+ * connectivity never sends call_end, which otherwise leaves the session open
+ * forever with a NULL duration — so the call is never billed at all and shows
+ * as permanently in-progress.
+ */
+export async function endActiveCallsForUser(
+  appId: string,
+  userId: string,
+  reason = "disconnected"
+) {
+  const db = getPool();
+  if (db) {
+    await db.query(
+      `UPDATE call_sessions
+       SET ended_at = NOW(),
+           duration_ms = EXTRACT(EPOCH FROM (NOW() - started_at))::int * 1000,
+           end_reason = $3
+       WHERE app_id = $1
+         AND ended_at IS NULL
+         AND (caller_user_id = $2 OR callee_user_id = $2)`,
+      [appId, userId, reason]
+    );
+    return;
+  }
+
+  const endedAt = new Date();
+  for (const session of memoryCallSessions) {
+    if (session.appId !== appId || session.endedAt) continue;
+    if (session.callerUserId !== userId && session.calleeUserId !== userId) continue;
+    session.endedAt = endedAt.toISOString();
+    session.durationMs = endedAt.getTime() - new Date(session.startedAt).getTime();
+    session.endReason = reason;
   }
 }
 
@@ -105,12 +146,14 @@ export async function listCallSessions(appId: string, limit = 50): Promise<CallS
         startedAt: s.startedAt,
         endedAt: s.endedAt,
         durationMs: s.durationMs,
+        endReason: s.endReason,
       }));
   }
 
   const capped = Math.min(Math.max(limit, 1), 200);
   const result = await db.query(
-    `SELECT id, call_id, room_id, caller_user_id, callee_user_id, started_at, ended_at, duration_ms
+    `SELECT id, call_id, room_id, caller_user_id, callee_user_id, started_at, ended_at,
+            duration_ms, end_reason
      FROM call_sessions WHERE app_id = $1 ORDER BY started_at DESC LIMIT $2`,
     [appId, capped]
   );
@@ -124,6 +167,7 @@ export async function listCallSessions(appId: string, limit = 50): Promise<CallS
     startedAt: row.started_at,
     endedAt: row.ended_at,
     durationMs: row.duration_ms,
+    endReason: row.end_reason,
   }));
 }
 
