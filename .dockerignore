@@ -6,5 +6,4 @@ dist
 .env
 .env.*
 docs/*.pdf
-packages/demo
 packages/sdk/dist

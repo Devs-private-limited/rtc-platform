@@ -1,6 +1,5 @@
-# Build context for Dockerfile.web only. The root .dockerignore excludes
-# packages/demo because the signaling and SFU images don't need it — but the
-# frontend build does, so this file overrides it for that build.
+# Build context for Dockerfile.web only. The root .dockerignore must NOT exclude
+# packages/demo — otherwise the web image builds without demo sources/vite.config.
 node_modules
 dist
 .git
