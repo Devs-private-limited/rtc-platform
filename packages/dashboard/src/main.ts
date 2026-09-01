@@ -484,7 +484,7 @@ await rtc.init({
 await rtc.joinRoom("room-1");
 rtc.sendMessage("Hello!");
 await rtc.callUser("user_456");</pre>
-      <p class="muted" style="margin-top:12px">Demo app: <a href="http://localhost:5180" target="_blank">http://localhost:5180</a></p>
+      <p class="muted" style="margin-top:12px">Demo app: <a href="${import.meta.env.DEV ? "http://localhost:5180" : "/demo/"}" target="_blank">${import.meta.env.DEV ? "http://localhost:5180" : "/demo/"}</a></p>
     </section>
   `;
 }

@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import path from "path";
 
 export default defineConfig({
+  base: "/demo/",
   resolve: {
     alias: {
       "@rtc/sdk": path.resolve(__dirname, "../sdk/src/index.ts"),
