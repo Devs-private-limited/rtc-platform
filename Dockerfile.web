@@ -20,9 +20,10 @@ RUN npm run build -w @rtc/protocol
 RUN npm run build -w @rtc/demo
 RUN npm run build -w @rtc/dashboard
 
-# Static output only — Caddy serves these, so no runtime is shipped.
+# Static output only — Caddy serves these via a compose volume at /out.
+# Built assets live under /staging so a mounted /out volume cannot hide them.
 FROM alpine:3.20
-RUN mkdir -p /out/demo /out/dashboard
-COPY --from=builder /app/packages/demo/dist /out/demo
-COPY --from=builder /app/packages/dashboard/dist /out/dashboard
-CMD ["true"]
+RUN mkdir -p /staging/demo /staging/dashboard
+COPY --from=builder /app/packages/demo/dist /staging/demo
+COPY --from=builder /app/packages/dashboard/dist /staging/dashboard
+CMD ["sh", "-c", "rm -rf /out/demo /out/dashboard && cp -r /staging/demo /out/demo && cp -r /staging/dashboard /out/dashboard && echo frontends staged"]
