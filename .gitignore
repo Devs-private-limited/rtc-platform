@@ -5,3 +5,4 @@ dist
 data/
 
 .env.production
+scripts/vm-deploy.sh
