@@ -10,6 +10,8 @@ rtc-platform/
 │   ├── protocol/     # Shared message types
 │   ├── signaling/    # WebSocket + REST + app registry
 │   ├── sdk/          # @rtc/sdk — embed in any app (npm-ready)
+│   ├── mobile-android/  # Android SDK (Kotlin)
+│   ├── mobile-ios/      # iOS SDK (Swift)
 │   ├── media-sfu/    # mediasoup SFU service
 │   └── demo/         # Integration demo
 ├── docker-compose.yml
@@ -51,6 +53,16 @@ Open http://localhost:5181 — sign in with `dev-admin-key` (from `.env`).
 | Quick start | SDK integration snippet |
 
 See [docs/QUICKSTART.md](docs/QUICKSTART.md) for a 5-minute integration guide.
+
+## Mobile SDKs (iOS & Android)
+
+Native Kotlin and Swift packages for chat and P2P voice/video calls.
+
+- [Mobile overview](docs/MOBILE.md)
+- [Android SDK](packages/mobile-android/README.md)
+- [iOS SDK](packages/mobile-ios/README.md)
+
+Use `mediaMode: "p2p"` on mobile. SFU group calls are on the roadmap.
 
 ### Admin API (dashboard uses these)
 
