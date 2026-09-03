@@ -4,7 +4,11 @@ import type {
   CallPeerPayload,
   CallQualityReportPayload,
   ClientMessage,
+  EndRoomPayload,
   JoinMediaPayload,
+  JoinRoomPayload,
+  KickUserPayload,
+  MuteRemotePayload,
   RecordingReadyPayload,
   RoomMessagePayload,
   ServerMessage,
@@ -12,6 +16,8 @@ import type {
   WebRtcPayload,
 } from "@rtc/protocol";
 import type { RoomStore } from "./store/types.js";
+import type { RoomRoleStore } from "./room-roles.js";
+import { canModerate, canPublish, isAudience } from "./room-roles.js";
 import { joinMediaSession, leaveMediaSession } from "./media-sessions.js";
 import { MAX_MESSAGE_LENGTH, saveMessage } from "./messages.js";
 import { endCallSession, startCallSession } from "./metering.js";
@@ -20,15 +26,34 @@ import { saveQualityReport } from "./quality.js";
 import { maybeDispatchBillingAlert } from "./billing.js";
 import { checkAppFeature } from "./plan-features.js";
 import type { PlanFeature } from "./billing-plans.js";
+import {
+  clearCall,
+  clearUserCalls,
+  markCallConnected,
+  registerRinging,
+} from "./call-state.js";
 
 interface HandlerContext {
   message: ClientMessage;
   claims: TokenClaims;
   ws: WebSocket;
   rooms: RoomStore;
+  roomRoles: RoomRoleStore;
   send: (ws: WebSocket, message: ServerMessage) => void;
   sendToUser: (userId: string, message: ServerMessage) => Promise<boolean>;
   dispatch: (type: string, payload: Record<string, unknown>) => void;
+  forceLeaveRoom: (roomId: string, userId: string, reason: string) => Promise<void>;
+}
+
+function assertRoomScope(ctx: HandlerContext, roomId: string, ws: WebSocket) {
+  if (ctx.claims.roomId && ctx.claims.roomId !== roomId) {
+    ctx.send(ws, {
+      type: "error",
+      payload: { message: "Token is not valid for this room", code: "room_scope_denied" },
+    });
+    return false;
+  }
+  return true;
 }
 
 async function relayToUser(
@@ -70,31 +95,35 @@ export async function handleClientMessage(ctx: HandlerContext) {
 
   switch (message.type) {
     case "join_room": {
-      const { roomId } = message.payload as { roomId: string };
+      const { roomId, role } = message.payload as JoinRoomPayload;
       if (!roomId) {
         ctx.send(ws, { type: "error", payload: { message: "roomId is required" } });
         return;
       }
+      if (!assertRoomScope(ctx, roomId, ws)) return;
+      const requestedRole = role || ctx.claims.role || "publisher";
+      const assignedRole = ctx.roomRoles.assign(roomId, userId, requestedRole);
       await ctx.rooms.join(roomId, userId);
       const members = (await ctx.rooms.getMembers(roomId)).filter((id) => id !== userId);
       ctx.send(ws, {
         type: "room_joined",
-        payload: { roomId, members },
+        payload: { roomId, members, role: assignedRole },
         requestId: message.requestId,
       });
       for (const memberId of members) {
         await ctx.sendToUser(memberId, {
           type: "user_joined",
-          payload: { roomId, userId },
+          payload: { roomId, userId, role: assignedRole },
         });
       }
-      ctx.dispatch("user.joined", { roomId, userId });
+      ctx.dispatch("user.joined", { roomId, userId, role: assignedRole });
       break;
     }
 
     case "leave_room": {
       const { roomId } = message.payload as { roomId: string };
       await ctx.rooms.leave(roomId, userId);
+      ctx.roomRoles.remove(roomId, userId);
       // Leaving the room ends any group media in it. Done as a direct call
       // rather than a media.left event so subscribers aren't sent a delivery
       // for someone who was never in media — the update matches no rows then.
@@ -132,6 +161,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
         ctx.send(ws, { type: "error", payload: { message: "Join the room first" } });
         return;
       }
+      if (!assertRoomScope(ctx, roomId, ws)) return;
       const payload: RoomMessagePayload = {
         roomId,
         fromUserId: userId,
@@ -161,16 +191,46 @@ export async function handleClientMessage(ctx: HandlerContext) {
         ctx.send(ws, { type: "error", payload: { message: "Join the room first" } });
         return;
       }
+      if (!assertRoomScope(ctx, roomId, ws)) return;
       const callType = (message.payload as CallInvitePayload).callType || "voice";
       const feature: PlanFeature = callType === "video" ? "video" : "voice";
       if (!(await requireFeature(ctx, feature))) return;
-      await relayToUser(ctx, toUserId, "call_invite", {
-        callId,
-        roomId,
-        fromUserId: userId,
-        toUserId,
-        callType: (message.payload as CallInvitePayload).callType,
-      } satisfies CallPeerPayload);
+
+      const busy = registerRinging(ctx.claims.appId, callId, roomId, userId, toUserId);
+      if (!busy.ok) {
+        ctx.send(ws, {
+          type: "error",
+          payload: {
+            message:
+              busy.busyUserId === userId
+                ? "You are already in a call"
+                : `User ${toUserId} is busy`,
+            code: "call_busy",
+            busyUserId: busy.busyUserId,
+          },
+        });
+        return;
+      }
+
+      const delivered = await ctx.sendToUser(toUserId, {
+        type: "call_invite",
+        payload: {
+          callId,
+          roomId,
+          fromUserId: userId,
+          toUserId,
+          callType: (message.payload as CallInvitePayload).callType,
+        } satisfies CallPeerPayload,
+      });
+      if (!delivered) {
+        clearCall(callId);
+        ctx.send(ctx.ws, {
+          type: "error",
+          payload: { message: `User ${toUserId} is offline`, code: "user_offline" },
+        });
+        return;
+      }
+
       ctx.dispatch("call.ringing", {
         callId,
         roomId,
@@ -189,6 +249,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
         const callType = payload.callType || "voice";
         const feature: PlanFeature = callType === "video" ? "video" : "voice";
         if (!(await requireFeature(ctx, feature))) return;
+        markCallConnected(payload.callId);
       }
       await relayToUser(ctx, payload.toUserId, message.type, {
         ...payload,
@@ -210,7 +271,11 @@ export async function handleClientMessage(ctx: HandlerContext) {
           payload.toUserId,
           userId
         );
-      } else if (message.type === "call_end") {
+      } else if (message.type === "call_end" || message.type === "call_reject") {
+        clearCall(payload.callId);
+      }
+
+      if (message.type === "call_end") {
         void endCallSession(ctx.claims.appId, payload.callId, "hangup");
         void maybeDispatchBillingAlert(ctx.claims.appId, (type, p) => ctx.dispatch(type, p));
       } else if (message.type === "call_reject") {
@@ -244,6 +309,17 @@ export async function handleClientMessage(ctx: HandlerContext) {
       };
       if (!payload.roomId || !payload.producerId) {
         ctx.send(ctx.ws, { type: "error", payload: { message: "Invalid SFU payload" } });
+        return;
+      }
+      const role = ctx.roomRoles.get(payload.roomId, userId);
+      if (!canPublish(role)) {
+        ctx.send(ctx.ws, {
+          type: "error",
+          payload: {
+            message: "Audience members cannot publish media",
+            code: "publish_denied",
+          },
+        });
         return;
       }
       if (payload.kind === "video") {
@@ -288,10 +364,22 @@ export async function handleClientMessage(ctx: HandlerContext) {
         ctx.send(ws, { type: "error", payload: { message: "Join the room first" } });
         return;
       }
+      if (!assertRoomScope(ctx, roomId, ws)) return;
 
       if (message.type === "join_media") {
         const feature: PlanFeature = kind === "video" ? "groupVideo" : "groupVoice";
         if (!(await requireFeature(ctx, feature))) return;
+        const role = ctx.roomRoles.get(roomId, userId);
+        if (isAudience(role)) {
+          ctx.send(ws, {
+            type: "error",
+            payload: {
+              message: "Audience role can only subscribe — use recv-only SFU join",
+              code: "audience_publish_denied",
+            },
+          });
+          return;
+        }
       }
 
       const joining = message.type === "join_media";
@@ -310,6 +398,66 @@ export async function handleClientMessage(ctx: HandlerContext) {
       }
       ctx.dispatch(joining ? "media.joined" : "media.left", { roomId, userId, kind });
       void maybeDispatchBillingAlert(ctx.claims.appId, (type, p) => ctx.dispatch(type, p));
+      break;
+    }
+
+    case "kick_user": {
+      const { roomId, targetUserId } = message.payload as KickUserPayload;
+      if (!roomId || !targetUserId) {
+        ctx.send(ws, { type: "error", payload: { message: "roomId and targetUserId required" } });
+        return;
+      }
+      if (!canModerate(ctx.roomRoles.get(roomId, userId))) {
+        ctx.send(ws, { type: "error", payload: { message: "Only host can kick users", code: "forbidden" } });
+        return;
+      }
+      await ctx.forceLeaveRoom(roomId, targetUserId, "kicked");
+      ctx.dispatch("user.kicked", { roomId, userId: targetUserId, byUserId: userId });
+      break;
+    }
+
+    case "mute_remote": {
+      const payload = message.payload as MuteRemotePayload;
+      if (!payload.roomId || !payload.targetUserId) {
+        ctx.send(ws, { type: "error", payload: { message: "Invalid mute payload" } });
+        return;
+      }
+      if (!canModerate(ctx.roomRoles.get(payload.roomId, userId))) {
+        ctx.send(ws, { type: "error", payload: { message: "Only host can mute remote users", code: "forbidden" } });
+        return;
+      }
+      await ctx.sendToUser(payload.targetUserId, {
+        type: "user_muted",
+        payload: {
+          roomId: payload.roomId,
+          targetUserId: payload.targetUserId,
+          kind: payload.kind,
+          muted: payload.muted,
+          byUserId: userId,
+        },
+      });
+      break;
+    }
+
+    case "end_room": {
+      const { roomId } = message.payload as EndRoomPayload;
+      if (!roomId) {
+        ctx.send(ws, { type: "error", payload: { message: "roomId is required" } });
+        return;
+      }
+      if (!canModerate(ctx.roomRoles.get(roomId, userId))) {
+        ctx.send(ws, { type: "error", payload: { message: "Only host can end the room", code: "forbidden" } });
+        return;
+      }
+      const members = await ctx.rooms.getMembers(roomId);
+      for (const memberId of members) {
+        if (memberId !== userId) {
+          await ctx.forceLeaveRoom(roomId, memberId, "room_ended");
+        }
+      }
+      await ctx.rooms.leave(roomId, userId);
+      ctx.roomRoles.clearRoom(roomId);
+      ctx.dispatch("room.ended", { roomId, byUserId: userId });
       break;
     }
 

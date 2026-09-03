@@ -60,6 +60,8 @@ services:
       DATABASE_URL: postgresql://rtc:rtc@postgres:5432/rtc
       REDIS_URL: redis://redis:6379
       SFU_URL: http://media-sfu:4100
+      RTMP_INGEST_URL: rtmp://rtmp-ingest/live
+      HLS_PUBLIC_URL: http://localhost:8081/hls
       TURN_URL: turn:coturn:3478
       TURN_USERNAME: rtc
       TURN_PASSWORD: rtc-turn-secret
@@ -85,12 +87,30 @@ services:
     environment:
       PORT: 4100
       ANNOUNCED_IP: 127.0.0.1
+      JWT_SECRET: dev-secret-change-in-production
+      RTMP_INGEST_URL: rtmp://rtmp-ingest/live
+    depends_on:
+      - rtmp-ingest
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4100/ready"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  rtmp-ingest:
+    image: alfg/nginx-rtmp
+    ports:
+      - "1935:1935"
+      - "8081:8080"
+    volumes:
+      - ./infra/nginx-rtmp/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   pg_data:

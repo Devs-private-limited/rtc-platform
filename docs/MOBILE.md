@@ -6,8 +6,8 @@ Native mobile SDKs for RTCExpress — same signaling server and token flow as th
 
 | Platform | Path | Status |
 |----------|------|--------|
-| **Android** | `packages/mobile-android` | P2P chat + voice + video |
-| **iOS** | `packages/mobile-ios` | P2P chat + voice + video |
+| **Android** | `packages/mobile-android` | P2P + SFU chat/voice/video |
+| **iOS** | `packages/mobile-ios` | P2P chat/voice/video; SFU via mediasoup-swift (see below) |
 | **Web** | `packages/sdk` | Full (P2P + SFU + recording) |
 
 ## Architecture
@@ -19,74 +19,54 @@ Your mobile app
     │
     ├─ WebSocket /ws?token=JWT  (signaling — chat, calls)
     │
-    └─ WebRTC P2P  (voice/video media)
+    ├─ WebRTC P2P  (1:1 voice/video)
+    └─ mediasoup SFU  (group voice/video — Android full, iOS see MOBILE-SFU.md)
 ```
-
-## Token flow (same as web)
-
-1. Your **backend** calls `POST /v1/token` with `appId`, `appSecret`, `userId`
-2. Mobile app receives JWT token from your API
-3. SDK connects: `wss://your-server/ws?token=...`
-4. `joinRoom` → chat, `callUser` → P2P call
 
 ## Feature parity
 
-| Feature | Web SDK | Android | iOS |
-|---------|---------|---------|-----|
+| Feature | Web | Android | iOS |
+|---------|-----|---------|-----|
 | Chat | ✅ | ✅ | ✅ |
+| Chat history (REST) | ✅ | ✅ | ✅ |
 | 1:1 voice (P2P) | ✅ | ✅ | ✅ |
 | 1:1 video (P2P) | ✅ | ✅ | ✅ |
-| Group voice (SFU) | ✅ | 🔜 | 🔜 |
-| Group video (SFU) | ✅ | 🔜 | 🔜 |
-| Screen share | ✅ | 🔜 | 🔜 |
-| Recording | ✅ | 🔜 | 🔜 |
+| 1:1 via SFU (`mediaMode: auto`) | ✅ | ✅ | 🔜 |
+| Group voice (SFU) | ✅ | ✅ | 🔜 |
+| Group video (SFU) | ✅ | ✅ | 🔜 |
+| Call recording (local mic) | ✅ | ✅ | ✅ |
 | Flip camera | ✅ | ✅ | ✅ |
+| Push / background calls | — | [Guide](PUSH.md) | [Guide](PUSH.md) |
+| Call busy handling | ✅ | ✅ | ✅ |
 
-## Plan gating
+## Quick API
 
-Mobile apps use the same project plans as web. The server blocks:
+### Android
 
-- **Free** — chat only
-- **Starter** — chat + voice
-- **Pro** — chat + voice + video + recording
-
-Set plans in the dashboard **Billing** tab.
-
-## Production server
-
-```
-https://rtcplatform.duckdns.org
-```
-
-Use `mediaMode: "p2p"` on mobile for now (SFU group calls coming in Phase 2).
-
-## Permissions
-
-### Android (`AndroidManifest.xml`)
-
-```xml
-<uses-permission android:name="android.permission.INTERNET" />
-<uses-permission android:name="android.permission.RECORD_AUDIO" />
-<uses-permission android:name="android.permission.CAMERA" />
+```kotlin
+rtc.init(RTCInitOptions(serverUrl, appId, userId, token, mediaMode = "auto"))
+rtc.joinRoom("ride-123")
+rtc.getMessageHistory("ride-123")
+rtc.callUser("driver-9", video = false)
+rtc.joinVoiceRoom()
+rtc.startRecording()
+val result = rtc.stopRecording()
 ```
 
-### iOS (`Info.plist`)
+### iOS
 
-```xml
-<key>NSMicrophoneUsageDescription</key>
-<string>Voice calls</string>
-<key>NSCameraUsageDescription</key>
-<string>Video calls</string>
+```swift
+rtc.initClient(RTCInitOptions(serverUrl: url, appId: appId, userId: userId, token: token))
+rtc.joinRoom("ride-123")
+let page = try await rtc.getMessageHistory("ride-123")
+try rtc.callUser("driver-9", video: false)
+try rtc.startRecording()
+let result = try rtc.stopRecording()
 ```
 
-## Next steps
+## Related docs
 
-1. Integrate Android or iOS SDK into your app
-2. Add a backend endpoint that issues tokens
-3. Test against https://rtcplatform.duckdns.org/demo/ with two users
-4. Set project plan to **Pro** in dashboard for video calls
-
-See platform READMEs:
-
+- [Push notifications & VoIP](PUSH.md)
+- [Mobile SFU setup](MOBILE-SFU.md)
 - [Android SDK](../packages/mobile-android/README.md)
 - [iOS SDK](../packages/mobile-ios/README.md)

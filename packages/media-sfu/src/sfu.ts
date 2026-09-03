@@ -1,6 +1,7 @@
 import type {
   Consumer,
   MediaKind,
+  PlainTransport,
   Producer,
   Router,
   RtpCapabilities,
@@ -97,6 +98,16 @@ export class SfuManager {
             mimeType: "video/VP8",
             clockRate: 90000,
           },
+          {
+            kind: "video",
+            mimeType: "video/H264",
+            clockRate: 90000,
+            parameters: {
+              "packetization-mode": 1,
+              "profile-level-id": "42e01f",
+              "level-asymmetry-allowed": 1,
+            },
+          },
         ],
       });
       this.rooms.set(roomId, new SfuRoom(router));
@@ -185,5 +196,65 @@ export class SfuManager {
       }
     }
     return items;
+  }
+
+  async createPlainConsumers(
+    roomId: string,
+    opts: { videoProducerId: string; audioProducerId?: string }
+  ) {
+    const room = this.getRoom(roomId);
+    if (!room) return null;
+
+    const findProducer = (id: string): Producer | null => {
+      for (const peer of room.peers.values()) {
+        const producer = peer.producers.get(id);
+        if (producer) return producer;
+      }
+      return null;
+    };
+
+    if (!findProducer(opts.videoProducerId)) return null;
+
+    const videoTransport = await room.router.createPlainTransport({
+      listenIp: { ip: "127.0.0.1", announcedIp: "127.0.0.1" },
+      rtcpMux: false,
+      comedia: true,
+    });
+
+    const videoConsumer = await videoTransport.consume({
+      producerId: opts.videoProducerId,
+      rtpCapabilities: room.router.rtpCapabilities,
+      paused: false,
+    });
+    await videoConsumer.resume();
+
+    let audioTransport: PlainTransport | null = null;
+    let audioConsumer: Consumer | null = null;
+
+    if (opts.audioProducerId && findProducer(opts.audioProducerId)) {
+      audioTransport = await room.router.createPlainTransport({
+        listenIp: { ip: "127.0.0.1", announcedIp: "127.0.0.1" },
+        rtcpMux: false,
+        comedia: true,
+      });
+      audioConsumer = await audioTransport.consume({
+        producerId: opts.audioProducerId,
+        rtpCapabilities: room.router.rtpCapabilities,
+        paused: false,
+      });
+      await audioConsumer.resume();
+    }
+
+    const consumers: Consumer[] = [videoConsumer];
+    if (audioConsumer) consumers.push(audioConsumer);
+
+    return {
+      transport: videoTransport,
+      videoTransport,
+      audioTransport,
+      consumers,
+      videoConsumer,
+      audioConsumer,
+    };
   }
 }

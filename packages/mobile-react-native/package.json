@@ -1,0 +1,25 @@
+{
+  "name": "@rtc/react-native-sdk",
+  "version": "0.1.0",
+  "description": "React Native SDK for RTC Platform — wraps native Android/iOS libraries",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "react-native": "src/index.ts",
+  "files": ["src", "lib", "android", "ios", "react-native.config.js", "RTCExpress.podspec"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-native": ">=0.73"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "react": "^18.3.0",
+    "react-native": "^0.76.0",
+    "typescript": "^5.7.3"
+  },
+  "keywords": ["webrtc", "rtc", "react-native", "video-call"],
+  "license": "MIT"
+}

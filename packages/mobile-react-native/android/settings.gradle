@@ -1,0 +1,4 @@
+rootProject.name = "rtcexpress-react-native"
+include(":rtcexpress-react-native")
+include(":rtcexpress-sdk")
+project(":rtcexpress-sdk").projectDir = file("../../mobile-android/sdk")

@@ -15,8 +15,8 @@ function resolvePlatformFeatures(plan: BillingPlan, sfuUrl: string | null): Plat
   };
 }
 
-export async function getPlatformConfig(appId?: string): Promise<PlatformConfig> {
-  const ice = getIceConfig();
+export async function getPlatformConfig(appId?: string, userId?: string): Promise<PlatformConfig> {
+  const ice = getIceConfig(userId ? { userId } : {});
   const sfuUrl = process.env.SFU_URL || null;
   if (!appId) {
     const sfuAvailable = Boolean(sfuUrl);

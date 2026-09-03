@@ -13,7 +13,10 @@ export type ClientMessageType =
   | "recording_ready"
   | "call_quality_report"
   | "join_media"
-  | "leave_media";
+  | "leave_media"
+  | "kick_user"
+  | "mute_remote"
+  | "end_room";
 
 export type ServerMessageType =
   | "connected"
@@ -35,6 +38,9 @@ export type ServerMessageType =
   | "call_state"
   | "media_participant_joined"
   | "media_participant_left"
+  | "user_kicked"
+  | "user_muted"
+  | "cloud_recording_state"
   | "error";
 
 /** Group media a participant can be in. Mirrors joinVoiceRoom / joinVideoRoom. */
@@ -73,6 +79,39 @@ export interface ServerMessage<T = unknown> {
 
 export interface JoinRoomPayload {
   roomId: string;
+  /** host | publisher | subscriber | audience (live broadcast listener) */
+  role?: RoomRole;
+}
+
+export type RoomRole = "host" | "publisher" | "subscriber" | "audience";
+
+export interface RoomMemberPayload {
+  roomId: string;
+  userId: string;
+  role?: RoomRole;
+}
+
+export interface KickUserPayload {
+  roomId: string;
+  targetUserId: string;
+}
+
+export interface MuteRemotePayload {
+  roomId: string;
+  targetUserId: string;
+  kind: "audio" | "video";
+  muted: boolean;
+}
+
+export interface EndRoomPayload {
+  roomId: string;
+}
+
+export interface CloudRecordingStatePayload {
+  roomId: string;
+  state: "started" | "stopped";
+  sessionId?: string;
+  recordingId?: string;
 }
 
 export interface SendMessagePayload {
@@ -216,6 +255,7 @@ export interface TokenRequest {
   appSecret: string;
   userId: string;
   roomId?: string;
+  role?: RoomRole;
 }
 
 export interface TokenResponse {
@@ -227,6 +267,7 @@ export interface TokenClaims {
   appId: string;
   userId: string;
   roomId?: string;
+  role?: RoomRole;
   iat: number;
   exp: number;
 }

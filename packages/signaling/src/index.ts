@@ -29,8 +29,12 @@ import { registerMediaSessionRoutes } from "./routes/media-sessions.js";
 import { endMediaSessionsForUser } from "./media-sessions.js";
 import { registerMessageRoutes } from "./routes/messages.js";
 import { endActiveCallsForUser } from "./metering.js";
+import { clearUserCalls } from "./call-state.js";
 import { dispatchEvent } from "./webhooks.js";
 import { setRecordingsDir, ensureRecordingsDir } from "./recordings.js";
+import { MemoryRoomRoleStore } from "./room-roles.js";
+import { registerCloudRecordingRoutes } from "./routes/cloud-recording.js";
+import { registerCdnStreamRoutes } from "./routes/cdn-stream.js";
 import { MemoryPresenceStore, MemoryRoomStore } from "./store/memory.js";
 import {
   createRedisClient,
@@ -62,6 +66,7 @@ await registerBillingRoutes(app);
 await registerMediaSessionRoutes(app);
 
 let rooms: RoomStore = new MemoryRoomStore();
+const roomRoles = new MemoryRoomRoleStore();
 let presence: PresenceStore = new MemoryPresenceStore();
 let redisPub = env.redisUrl ? createRedisClient(env.redisUrl) : null;
 let redisSub = env.redisUrl ? createRedisClient(env.redisUrl) : null;
@@ -77,6 +82,17 @@ if (redisPub && redisSub) {
 // Registered here rather than with the other routes so it binds the final
 // room store, after Redis has had its chance to replace the in-memory one.
 await registerMessageRoutes(app, { jwtSecret: env.jwtSecret, rooms });
+await registerCloudRecordingRoutes(app, {
+  jwtSecret: env.jwtSecret,
+  recordingsDir: env.recordingsDir,
+  rooms,
+  roomRoles,
+});
+await registerCdnStreamRoutes(app, {
+  jwtSecret: env.jwtSecret,
+  rooms,
+  roomRoles,
+});
 
 async function checkRedis() {
   if (!redisPub) return true;
@@ -123,10 +139,20 @@ app.get("/ready", async (_req, reply) => {
   return payload;
 });
 
+function userIdFromAuthHeader(req: { headers: { authorization?: string } }) {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) return undefined;
+  try {
+    return verifyToken(header.slice(7), env.jwtSecret).userId;
+  } catch {
+    return undefined;
+  }
+}
+
 app.get<{ Querystring: { appId?: string } }>("/v1/config", async (req) =>
-  getPlatformConfig(req.query.appId)
+  getPlatformConfig(req.query.appId, userIdFromAuthHeader(req))
 );
-app.get("/v1/ice", async () => getIceConfig());
+app.get("/v1/ice", async (req) => getIceConfig({ userId: userIdFromAuthHeader(req) }));
 
 app.post<{ Body: TokenRequest }>("/v1/token", async (req, reply) => {
   const ip = req.ip;
@@ -134,7 +160,7 @@ app.post<{ Body: TokenRequest }>("/v1/token", async (req, reply) => {
     return reply.status(429).send({ error: "Too many token requests" });
   }
 
-  const { appId, appSecret, userId, roomId } = req.body || {};
+  const { appId, appSecret, userId, roomId, role } = req.body || {};
   if (!appId || !appSecret || !userId) {
     return reply.status(400).send({ error: "appId, appSecret, and userId are required" });
   }
@@ -144,7 +170,7 @@ app.post<{ Body: TokenRequest }>("/v1/token", async (req, reply) => {
     return reply.status(401).send({ error: "Invalid app credentials" });
   }
 
-  const token = issueToken({ appId, userId, roomId }, env.jwtSecret);
+  const token = issueToken({ appId, userId, roomId, role }, env.jwtSecret);
   const response: TokenResponse = { token, expiresIn: 3600 };
   return response;
 });
@@ -182,6 +208,33 @@ await relay.start();
 
 userNotifier.sendToUser = (userId, message) => relay.sendToUser(userId, message);
 
+async function forceLeaveRoom(
+  appId: string,
+  roomId: string,
+  targetUserId: string,
+  reason: string
+) {
+  await rooms.leave(roomId, targetUserId);
+  roomRoles.remove(roomId, targetUserId);
+  await endMediaSessionsForUser(appId, targetUserId);
+  await endActiveCallsForUser(appId, targetUserId);
+  clearUserCalls(appId, targetUserId);
+
+  await relay.sendToUser(targetUserId, {
+    type: "user_kicked",
+    payload: { roomId, reason },
+  });
+
+  const members = await rooms.getMembers(roomId);
+  for (const memberId of members) {
+    await relay.sendToUser(memberId, {
+      type: "user_left",
+      payload: { roomId, userId: targetUserId },
+    });
+  }
+  void dispatchEvent(appId, "user.left", { roomId, userId: targetUserId, reason });
+}
+
 wss.on("connection", (ws, req) => {
   const url = new URL(req.url || "", `http://${req.headers.host}`);
   const token = url.searchParams.get("token");
@@ -216,10 +269,13 @@ wss.on("connection", (ws, req) => {
         claims,
         ws,
         rooms,
+        roomRoles,
         send,
         sendToUser: (targetUserId, serverMessage) =>
           relay.sendToUser(targetUserId, serverMessage),
         dispatch: (type, payload) => void dispatchEvent(claims.appId, type, payload),
+        forceLeaveRoom: (roomId, targetUserId, reason) =>
+          forceLeaveRoom(claims.appId, roomId, targetUserId, reason),
       });
     } catch {
       send(ws, { type: "error", payload: { message: "Invalid message format" } });
@@ -234,8 +290,10 @@ wss.on("connection", (ws, req) => {
       // membership, so a lost socket can't leave a session open indefinitely.
       await endMediaSessionsForUser(claims.appId, userId);
       await endActiveCallsForUser(claims.appId, userId);
+      clearUserCalls(claims.appId, userId);
       const leftRooms = await rooms.leaveAll(userId);
       for (const roomId of leftRooms) {
+        roomRoles.remove(roomId, userId);
         const members = await rooms.getMembers(roomId);
         for (const memberId of members) {
           await relay.sendToUser(memberId, {

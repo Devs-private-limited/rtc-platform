@@ -1,0 +1,4 @@
+rootProject.name = 'rtcexpress'
+include ':rtcexpress'
+include ':rtcexpress-sdk'
+project(':rtcexpress-sdk').projectDir = new File(settingsDir, '../../mobile-android/sdk')

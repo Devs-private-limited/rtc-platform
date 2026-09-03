@@ -50,6 +50,11 @@
 		reverse_proxy host.docker.internal:4100
 	}
 
+	# HLS playback from nginx-rtmp (CDN-scale live viewers).
+	handle /hls/* {
+		reverse_proxy host.docker.internal:8080
+	}
+
 	# Developer dashboard at the root
 	handle /demo/* {
 		uri strip_prefix /demo

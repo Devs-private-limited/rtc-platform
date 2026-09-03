@@ -24,5 +24,5 @@ android {
 
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("io.getstream:stream-webrtc-android:1.1.3")
+    implementation("io.github.haiyangwu:mediasoup-client:3.4.0")
 }

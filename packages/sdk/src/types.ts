@@ -1,4 +1,4 @@
-import type { CallType, IceServerConfig } from "@rtc/protocol";
+import type { CallType, IceServerConfig, RoomRole } from "@rtc/protocol";
 import type { ClientMessage, ServerMessage } from "@rtc/protocol";
 
 export type MediaMode = "p2p" | "sfu" | "auto";
@@ -10,6 +10,8 @@ export interface RTCInitOptions {
   token: string;
   /** p2p = direct WebRTC, sfu = mediasoup server, auto = use SFU when available */
   mediaMode?: MediaMode;
+  /** Reconnect signaling after network drops (default true). */
+  autoReconnect?: boolean;
 }
 
 export interface CallOptions {
@@ -60,12 +62,55 @@ export interface CallQualityEvent {
   at: number;
 }
 
+export interface JoinRoomOptions {
+  role?: RoomRole;
+}
+
+export interface CloudRecordingSession {
+  id: string;
+  roomId: string;
+  appId: string;
+  startedBy: string;
+  startedAt: string;
+  endedAt: string | null;
+  status: "recording" | "completed" | "failed";
+  filePath: string | null;
+}
+
+export interface CdnStreamSession {
+  id: string;
+  roomId: string;
+  appId: string;
+  streamKey: string;
+  rtmpPushUrl: string;
+  hlsPlaybackUrl: string;
+  startedBy: string;
+  startedAt: string;
+  endedAt: string | null;
+  status: "active" | "stopped";
+  mode: "webrtc_bridge" | "rtmp_push";
+}
+
 export interface RTCEvents {
   connected: [{ userId: string }];
   disconnected: [];
-  roomJoined: [{ roomId: string; members: string[] }];
-  userJoined: [{ roomId: string; userId: string }];
+  reconnecting: [{ attempt: number; delayMs: number }];
+  reconnected: [];
+  roomJoined: [{ roomId: string; members: string[]; role?: RoomRole }];
+  userJoined: [{ roomId: string; userId: string; role?: RoomRole }];
   userLeft: [{ roomId: string; userId: string }];
+  userKicked: [{ roomId: string; reason?: string }];
+  userMuted: [
+    {
+      roomId: string;
+      targetUserId: string;
+      kind: "audio" | "video";
+      muted: boolean;
+      byUserId: string;
+    },
+  ];
+  roomEnded: [{ roomId: string }];
+  broadcastJoined: [{ roomId: string }];
   message: [import("@rtc/protocol").RoomMessagePayload];
   callInvite: [import("@rtc/protocol").CallPeerPayload];
   callState: [
@@ -93,7 +138,7 @@ export interface RTCEvents {
   transcriptReady: [TranscriptReadyEvent];
   summaryReady: [SummaryReadyEvent];
   callQuality: [CallQualityEvent];
-  error: [{ message: string }];
+  error: [{ message: string; code?: string }];
 }
 
 export const DEFAULT_STUN_SERVERS: RTCIceServer[] = [
@@ -121,10 +166,13 @@ export async function fetchToken(
 
 export async function fetchPlatformConfig(
   serverUrl: string,
-  appId?: string
+  appId?: string,
+  token?: string
 ): Promise<import("@rtc/protocol").PlatformConfig> {
   const query = appId ? `?appId=${encodeURIComponent(appId)}` : "";
-  const res = await fetch(`${serverUrl}/v1/config${query}`);
+  const headers: HeadersInit = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${serverUrl}/v1/config${query}`, { headers });
   if (!res.ok) throw new Error("Failed to fetch platform config");
   return res.json();
 }

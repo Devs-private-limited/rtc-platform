@@ -19,6 +19,7 @@ export class P2pMediaEngine {
   private localStream: MediaStream | null = null;
   private screenStream: MediaStream | null = null;
   private remoteAudio: HTMLAudioElement | null = null;
+  private remoteMediaStream: MediaStream | null = null;
   private mediaOptions: P2pMediaOptions = { audio: true, video: false };
   private facingMode: CameraFacing = "user";
 
@@ -51,13 +52,16 @@ export class P2pMediaEngine {
     this.remoteAudio = new Audio();
     this.remoteAudio.autoplay = true;
     this.peerConnection.ontrack = (event) => {
-      const stream = event.streams[0] || new MediaStream([event.track]);
-      if (event.track.kind === "video") {
-        this.onRemoteStream?.(stream);
-      } else if (this.remoteAudio) {
-        this.remoteAudio.srcObject = stream;
+      if (!this.remoteMediaStream) this.remoteMediaStream = new MediaStream();
+      if (!this.remoteMediaStream.getTracks().some((t) => t.id === event.track.id)) {
+        this.remoteMediaStream.addTrack(event.track);
       }
-      this.onRemoteStream?.(stream);
+
+      if (event.track.kind === "audio" && this.remoteAudio) {
+        this.remoteAudio.srcObject = new MediaStream(this.remoteMediaStream.getAudioTracks());
+      }
+
+      this.onRemoteStream?.(this.remoteMediaStream);
     };
 
     this.peerConnection.onicecandidate = (event) => {
@@ -81,6 +85,10 @@ export class P2pMediaEngine {
 
   getLocalStream() {
     return this.localStream;
+  }
+
+  getRemoteStream() {
+    return this.remoteMediaStream;
   }
 
   getPeerConnection() {
@@ -210,6 +218,7 @@ export class P2pMediaEngine {
       this.remoteAudio.srcObject = null;
       this.remoteAudio = null;
     }
+    this.remoteMediaStream = null;
   }
 }
 

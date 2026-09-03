@@ -16,6 +16,10 @@ export interface MediaJoinOptions {
   announceToRoom?: boolean;
   audio?: boolean;
   video?: boolean;
+  /** Subscribe only — no local publish (live broadcast audience). */
+  recvOnly?: boolean;
+  /** Prefer H.264 when the SFU router supports it (default true). */
+  preferH264?: boolean;
 }
 
 export interface RemoteTrackInfo {
@@ -51,19 +55,28 @@ export class SfuMediaEngine {
   constructor(
     private sfuUrl: string,
     private userId: string,
+    private authToken: string,
     private sendSignal: SignalingSend,
     private onRemoteTrack?: OnRemoteTrack
   ) {}
 
+  private apiHeaders(): HeadersInit {
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${this.authToken}`,
+    };
+  }
+
   async joinRoom(roomId: string, options: MediaJoinOptions = {}) {
-    const audio = options.audio !== false;
-    const video = options.video === true;
+    const recvOnly = options.recvOnly === true;
+    const audio = !recvOnly && options.audio !== false;
+    const video = !recvOnly && options.video === true;
     this.roomId = roomId;
     const base = this.sfuUrl.replace(/\/$/, "");
 
     const joinRes = await fetch(`${base}/v1/rooms/${encodeURIComponent(roomId)}/join`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: this.apiHeaders(),
       body: JSON.stringify({ peerId: this.userId }),
     });
     if (!joinRes.ok) throw new Error("Failed to join SFU room");
@@ -72,12 +85,38 @@ export class SfuMediaEngine {
     this.device = new mediasoupClient.Device();
     await this.device.load({ routerRtpCapabilities: rtpCapabilities });
 
-    await this.createSendTransport(base, roomId, options);
+    if (!recvOnly) {
+      await this.createSendTransport(base, roomId, options);
+    }
     await this.createRecvTransport(base, roomId);
     if (audio || video) {
       await this.publishCameraMic(base, roomId, options, { audio, video });
     }
     await this.consumeExisting(base, roomId);
+  }
+
+  private preferVideoCodec(preferH264: boolean) {
+    if (!this.device) return undefined;
+    const codecs = this.device.rtpCapabilities.codecs || [];
+    if (preferH264) {
+      const h264 = codecs.find((c) => c.mimeType.toLowerCase() === "video/h264");
+      if (h264) return h264;
+    }
+    return codecs.find((c) => c.mimeType.toLowerCase() === "video/vp8");
+  }
+
+  private videoProduceOptions(track: MediaStreamTrack, preferH264: boolean) {
+    const codec = this.preferVideoCodec(preferH264);
+    return {
+      track,
+      codec,
+      encodings: [
+        { rid: "l", maxBitrate: 150_000, scaleResolutionDownBy: 4 },
+        { rid: "m", maxBitrate: 500_000, scaleResolutionDownBy: 2 },
+        { rid: "h", maxBitrate: 1_500_000 },
+      ],
+      codecOptions: { videoGoogleStartBitrate: 1000 },
+    };
   }
 
   async handleRemoteProducer(payload: SfuProducerPayload) {
@@ -103,7 +142,10 @@ export class SfuMediaEngine {
     track.onended = () => void this.stopScreenShare();
 
     this.pendingProduceSource = "screen";
-    const producer = await this.sendTransport.produce({ track });
+    const preferH264 = true;
+    const producer = await this.sendTransport.produce(
+      this.videoProduceOptions(track, preferH264)
+    );
     this.producers.set("screen", producer);
     this.producerMeta.set(producer.id, { source: "screen", kind: "video" });
   }
@@ -177,7 +219,7 @@ export class SfuMediaEngine {
   ) {
     const res = await fetch(`${base}/v1/rooms/${encodeURIComponent(roomId)}/transports`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: this.apiHeaders(),
       body: JSON.stringify({ peerId: this.userId }),
     });
     const transportInfo = await res.json();
@@ -195,7 +237,7 @@ export class SfuMediaEngine {
           `${base}/v1/rooms/${encodeURIComponent(roomId)}/transports/${transportInfo.id}/connect`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.apiHeaders(),
             body: JSON.stringify({ peerId: this.userId, dtlsParameters }),
           }
         );
@@ -211,7 +253,7 @@ export class SfuMediaEngine {
           `${base}/v1/rooms/${encodeURIComponent(roomId)}/transports/${transportInfo.id}/produce`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.apiHeaders(),
             body: JSON.stringify({ peerId: this.userId, kind, rtpParameters }),
           }
         );
@@ -240,7 +282,7 @@ export class SfuMediaEngine {
   private async createRecvTransport(base: string, roomId: string) {
     const res = await fetch(`${base}/v1/rooms/${encodeURIComponent(roomId)}/transports`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: this.apiHeaders(),
       body: JSON.stringify({ peerId: this.userId }),
     });
     const transportInfo = await res.json();
@@ -258,7 +300,7 @@ export class SfuMediaEngine {
           `${base}/v1/rooms/${encodeURIComponent(roomId)}/transports/${transportInfo.id}/connect`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.apiHeaders(),
             body: JSON.stringify({ peerId: this.userId, dtlsParameters }),
           }
         );
@@ -272,9 +314,10 @@ export class SfuMediaEngine {
   private async publishCameraMic(
     _base: string,
     _roomId: string,
-    _options: MediaJoinOptions,
+    options: MediaJoinOptions,
     media: { audio: boolean; video: boolean }
   ) {
+    const preferH264 = options.preferH264 !== false;
     this.localStream = await navigator.mediaDevices.getUserMedia({
       audio: media.audio,
       video: media.video ? videoConstraints(this.facingMode) : false,
@@ -294,7 +337,9 @@ export class SfuMediaEngine {
       const track = this.localStream.getVideoTracks()[0];
       if (track) {
         this.pendingProduceSource = "camera";
-        const producer = await this.sendTransport!.produce({ track });
+        const producer = await this.sendTransport!.produce(
+          this.videoProduceOptions(track, preferH264)
+        );
         this.producers.set("camera", producer);
         this.producerMeta.set(producer.id, { source: "camera", kind: "video" });
       }
@@ -303,7 +348,8 @@ export class SfuMediaEngine {
 
   private async consumeExisting(base: string, roomId: string) {
     const res = await fetch(
-      `${base}/v1/rooms/${encodeURIComponent(roomId)}/producers?peerId=${encodeURIComponent(this.userId)}`
+      `${base}/v1/rooms/${encodeURIComponent(roomId)}/producers?peerId=${encodeURIComponent(this.userId)}`,
+      { headers: { Authorization: `Bearer ${this.authToken}` } }
     );
     const { producers } = await res.json();
     for (const item of producers as { producerId: string; peerId: string; kind: MediaKind }[]) {
@@ -325,7 +371,7 @@ export class SfuMediaEngine {
       `${base}/v1/rooms/${encodeURIComponent(roomId)}/transports/${this.recvTransport.id}/consume`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.apiHeaders(),
         body: JSON.stringify({
           peerId: this.userId,
           producerId,

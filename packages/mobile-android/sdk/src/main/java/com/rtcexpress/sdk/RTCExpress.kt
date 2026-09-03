@@ -13,17 +13,35 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         fun onCallInvite(invite: CallInvite) {}
         fun onCallState(update: CallStateUpdate) {}
         fun onRemoteVideo(track: VideoTrack) {}
+        fun onVoiceRoomJoined(roomId: String) {}
+        fun onVoiceRoomLeft(roomId: String) {}
+        fun onVideoRoomJoined(roomId: String) {}
+        fun onVideoRoomLeft(roomId: String) {}
+        fun onRecordingStarted() {}
+        fun onRecordingStopped(result: RecordingResult) {}
         fun onError(message: String) {}
     }
 
     private val signaling = SignalingClient()
     private val tokenClient = TokenClient()
+    private val configClient = ConfigClient()
+    private val historyClient = HistoryClient()
+    private val callRecorder = CallRecorder(context)
     private var p2p: P2pMediaEngine? = null
+    private var sfu: SfuMediaEngine? = null
 
     private var serverUrl = ""
+    private var appId = ""
+    private var token = ""
     private var userId = ""
     private var roomId: String? = null
     private var listener: Listener? = null
+    private var incomingCallNotifier: IncomingCallNotifier? = null
+
+    private var mediaModePref = "p2p"
+    private var sfuUrl: String? = null
+    private var inVoiceRoom = false
+    private var inVideoRoom = false
 
     private var activeCall: ActiveCall? = null
 
@@ -39,11 +57,22 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         this.listener = listener
     }
 
+    fun setIncomingCallNotifier(notifier: IncomingCallNotifier?) {
+        this.incomingCallNotifier = notifier
+    }
+
     fun init(options: RTCInitOptions) {
         serverUrl = options.serverUrl.trimEnd('/')
+        appId = options.appId
         userId = options.userId
+        token = options.token
+        mediaModePref = options.mediaMode
         signaling.listener = this
         signaling.connect(serverUrl, options.token)
+        runCatching {
+            val config = configClient.fetchPlatformConfig(serverUrl, appId)
+            sfuUrl = config.sfuUrl
+        }
     }
 
     fun joinRoom(roomId: String) {
@@ -59,10 +88,94 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         )
     }
 
+    fun getMessageHistory(roomId: String, before: String? = null, limit: Int = 50): MessageHistoryPage {
+        return historyClient.getMessageHistory(serverUrl, token, roomId, before, limit)
+    }
+
+    fun joinVoiceRoom() {
+        val room = roomId ?: throw IllegalStateException("Join a room first")
+        val url = sfuUrl ?: throw IllegalStateException("SFU not available")
+        if (sfu == null) {
+            sfu = SfuMediaEngine(
+                context = context,
+                sfuUrl = url,
+                userId = userId,
+                authToken = token,
+                sendSignaling = { type, payload -> signaling.send(type, payload) },
+                onRemoteVideo = { track -> listener?.onRemoteVideo(track) }
+            )
+        }
+        sfu?.joinRoom(room, SfuJoinOptions(audio = true, video = false, announceToRoom = true))
+        inVoiceRoom = true
+        signaling.send("join_media", JSONObject().put("roomId", room).put("kind", "voice"))
+        listener?.onVoiceRoomJoined(room)
+    }
+
+    fun leaveVoiceRoom() {
+        if (!inVoiceRoom) return
+        val room = roomId
+        if (!inVideoRoom) {
+            sfu?.destroy()
+            sfu = null
+        }
+        inVoiceRoom = false
+        if (room != null && !inVideoRoom) {
+            signaling.send("leave_media", JSONObject().put("roomId", room).put("kind", "voice"))
+            listener?.onVoiceRoomLeft(room)
+        }
+    }
+
+    fun joinVideoRoom() {
+        val room = roomId ?: throw IllegalStateException("Join a room first")
+        val url = sfuUrl ?: throw IllegalStateException("SFU not available")
+        if (sfu == null) {
+            sfu = SfuMediaEngine(
+                context = context,
+                sfuUrl = url,
+                userId = userId,
+                authToken = token,
+                sendSignaling = { type, payload -> signaling.send(type, payload) },
+                onRemoteVideo = { track -> listener?.onRemoteVideo(track) }
+            )
+        }
+        sfu?.joinRoom(room, SfuJoinOptions(audio = true, video = true, announceToRoom = true))
+        inVoiceRoom = true
+        inVideoRoom = true
+        signaling.send("join_media", JSONObject().put("roomId", room).put("kind", "video"))
+        listener?.onVideoRoomJoined(room)
+    }
+
+    fun leaveVideoRoom() {
+        if (!inVideoRoom) return
+        val room = roomId
+        sfu?.destroy()
+        sfu = null
+        inVideoRoom = false
+        inVoiceRoom = false
+        if (room != null) {
+            signaling.send("leave_media", JSONObject().put("roomId", room).put("kind", "video"))
+            listener?.onVideoRoomLeft(room)
+        }
+    }
+
     fun callUser(peerUserId: String, video: Boolean = false) {
         val room = roomId ?: throw IllegalStateException("Join a room first")
+        if (activeCall != null) throw IllegalStateException("Already in a call")
         val callId = JsonUtil.newCallId()
-        activeCall = ActiveCall(callId, peerUserId, room, true, if (video) "video" else "voice")
+        val callType = if (video) "video" else "voice"
+        activeCall = ActiveCall(callId, peerUserId, room, true, callType)
+        if (resolvedMediaMode() == "sfu") {
+            signaling.send(
+                "call_invite",
+                JSONObject()
+                    .put("roomId", room)
+                    .put("toUserId", peerUserId)
+                    .put("callId", callId)
+                    .put("callType", callType)
+            )
+            emitCallState("ringing", peerUserId, room, callId, callType)
+            return
+        }
         ensureP2p(video)
         signaling.send(
             "call_invite",
@@ -70,20 +183,18 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 .put("roomId", room)
                 .put("toUserId", peerUserId)
                 .put("callId", callId)
-                .put("callType", if (video) "video" else "voice")
+                .put("callType", callType)
         )
-        emitCallState("ringing", peerUserId, room, callId, activeCall!!.callType)
+        emitCallState("ringing", peerUserId, room, callId, callType)
     }
 
     fun acceptCall() {
         val call = activeCall ?: throw IllegalStateException("No incoming call")
-        signaling.send(
-            "call_accept",
-            callPayload(call, call.peerUserId)
-        )
-        ensureP2p(call.callType == "video")
-        if (!call.isCaller) {
-            // Callee waits for offer
+        signaling.send("call_accept", callPayload(call, call.peerUserId))
+        if (resolvedMediaMode() == "sfu") {
+            startSfuCall(call)
+        } else {
+            ensureP2p(call.callType == "video")
         }
         emitCallState("connecting", call.peerUserId, call.roomId, call.callId, call.callType)
     }
@@ -100,20 +211,38 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         cleanupCall("ended")
     }
 
+    fun startRecording() {
+        if (activeCall == null && !inVoiceRoom && !inVideoRoom) {
+            throw IllegalStateException("Join a call or media room before recording")
+        }
+        callRecorder.startRecording()
+        listener?.onRecordingStarted()
+    }
+
+    fun stopRecording(): RecordingResult {
+        val result = callRecorder.stopRecording()
+        listener?.onRecordingStopped(result)
+        return result
+    }
+
+    fun isRecording() = callRecorder.isRecording
+
     fun muteMicrophone(muted: Boolean) {
-        p2p?.muteMicrophone(muted)
+        sfu?.muteMicrophone(muted) ?: p2p?.muteMicrophone(muted)
     }
 
     fun muteCamera(muted: Boolean) {
-        p2p?.muteCamera(muted)
+        sfu?.muteCamera(muted) ?: p2p?.muteCamera(muted)
     }
 
     fun switchCamera() {
-        p2p?.switchCamera()
+        sfu?.switchCamera() ?: p2p?.switchCamera()
     }
 
     fun destroy() {
         endCall()
+        leaveVoiceRoom()
+        leaveVideoRoom()
         signaling.close()
         p2p?.destroy()
         p2p = null
@@ -142,6 +271,18 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     }
 
     override fun onCallInvite(invite: CallInvite) {
+        if (activeCall != null) {
+            signaling.send(
+                "call_reject",
+                JSONObject()
+                    .put("callId", invite.callId)
+                    .put("fromUserId", userId)
+                    .put("toUserId", invite.fromUserId)
+                    .put("roomId", invite.roomId)
+                    .put("callType", invite.callType)
+            )
+            return
+        }
         activeCall = ActiveCall(
             invite.callId,
             invite.fromUserId,
@@ -149,12 +290,18 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
             false,
             invite.callType
         )
+        incomingCallNotifier?.onIncomingCall(invite, IncomingCallDisplay.from(invite))
         listener?.onCallInvite(invite)
         emitCallState("ringing", invite.fromUserId, invite.roomId, invite.callId, invite.callType)
     }
 
     override fun onCallAccept(payload: JSONObject) {
         val call = activeCall ?: return
+        if (resolvedMediaMode() == "sfu") {
+            startSfuCall(call)
+            emitCallState("connected", call.peerUserId, call.roomId, call.callId, call.callType)
+            return
+        }
         ensureP2p(call.callType == "video")
         p2p?.createOffer(call.peerUserId, call.callId)
         emitCallState("connecting", call.peerUserId, call.roomId, call.callId, call.callType)
@@ -183,12 +330,50 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         }
     }
 
-    override fun onIceCandidate(payload: JSONObject) {
+    override fun onWebRtcIceCandidate(payload: JSONObject) {
         p2p?.handleIceCandidate(payload)
     }
 
-    override fun onError(message: String) {
+    override fun onSfuProducer(payload: JSONObject) {
+        sfu?.handleRemoteProducer(payload)
+    }
+
+    override fun onError(message: String, code: String?) {
+        if (code == "call_busy" && activeCall?.isCaller == true) {
+            cleanupCall("rejected")
+        }
         listener?.onError(message)
+    }
+
+    private fun resolvedMediaMode(): String {
+        if (mediaModePref == "p2p") return "p2p"
+        if (mediaModePref == "sfu" && !sfuUrl.isNullOrBlank()) return "sfu"
+        if (mediaModePref == "auto" && !sfuUrl.isNullOrBlank()) return "sfu"
+        return "p2p"
+    }
+
+    private fun startSfuCall(call: ActiveCall) {
+        val url = sfuUrl ?: throw IllegalStateException("SFU not available")
+        if (sfu == null) {
+            sfu = SfuMediaEngine(
+                context = context,
+                sfuUrl = url,
+                userId = userId,
+                authToken = token,
+                sendSignaling = { type, payload -> signaling.send(type, payload) },
+                onRemoteVideo = { track -> listener?.onRemoteVideo(track) }
+            )
+        }
+        val sfuRoomId = "${call.roomId}-call-${call.callId}"
+        sfu?.joinRoom(
+            sfuRoomId,
+            SfuJoinOptions(
+                audio = true,
+                video = call.callType == "video",
+                targetUserId = call.peerUserId,
+                callId = call.callId
+            )
+        )
     }
 
     private fun ensureP2p(video: Boolean) {
@@ -223,6 +408,10 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     private fun cleanupCall(state: String) {
         val call = activeCall ?: return
         emitCallState(state, call.peerUserId, call.roomId, call.callId, call.callType)
+        if (!inVoiceRoom && !inVideoRoom) {
+            sfu?.destroy()
+            sfu = null
+        }
         p2p?.destroy()
         p2p = null
         activeCall = null

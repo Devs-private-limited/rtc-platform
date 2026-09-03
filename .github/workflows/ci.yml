@@ -32,6 +32,9 @@ jobs:
       - name: Build media-sfu
         run: npm run build -w @rtc/media-sfu
 
+      - name: Test signaling
+        run: npm run test -w @rtc/signaling
+
       - name: Verify npm packages
         run: |
           npm pack -w @rtc/protocol --dry-run

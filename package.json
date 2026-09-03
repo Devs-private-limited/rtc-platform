@@ -13,7 +13,8 @@
     "dev:sfu": "npm run dev -w @rtc/media-sfu",
     "build": "npm run build -w @rtc/protocol && npm run build -w @rtc/sdk && npm run build -w @rtc/signaling && npm run build -w @rtc/media-sfu",
     "build:sdk": "npm run build -w @rtc/protocol && npm run build -w @rtc/sdk",
-    "pack:sdk": "npm pack -w @rtc/protocol && npm pack -w @rtc/sdk"
+    "pack:sdk": "npm pack -w @rtc/protocol && npm pack -w @rtc/sdk",
+    "test": "npm run test -w @rtc/signaling"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

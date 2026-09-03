@@ -1,6 +1,10 @@
 export const WEBHOOK_EVENT_TYPES = [
   "user.joined",
   "user.left",
+  "user.kicked",
+  "room.ended",
+  "stream.started",
+  "stream.ended",
   "message.sent",
   "call.ringing",
   "call.connected",

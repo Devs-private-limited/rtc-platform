@@ -1,86 +1,97 @@
 # RTCExpress Android SDK
 
-Kotlin library for **chat** and **P2P voice/video calls** against the RTCExpress signaling server.
+Kotlin library for chat and WebRTC calls against the RTC Platform signaling server.
 
-## Requirements
+## Features
 
-- Android 7.0+ (API 24)
-- `INTERNET`, `RECORD_AUDIO`, `CAMERA` permissions
+- WebSocket signaling (chat, 1:1 calls)
+- P2P voice + video
+- **SFU group voice + video** (mediasoup via `haiyangwu/mediasoup-client`)
+- Chat history (`GET /v1/rooms/:id/messages`)
+- Local call recording (microphone)
+- Incoming call notifier hook for push integration
+- Call busy handling
 
-## Add to your app
+## Setup
 
 ```kotlin
-// settings.gradle.kts
-includeBuild("../rtc-platform/packages/mobile-android") // or publish to Maven
-
-// app/build.gradle.kts
 dependencies {
-    implementation(project(":sdk"))
+    implementation(project(":sdk")) // or Maven when published
 }
 ```
 
-Or copy the `sdk/` module into your Android project.
+Permissions in your app `AndroidManifest.xml`:
 
-## Quick start
-
-```kotlin
-val rtc = RTCExpress(applicationContext)
-rtc.setListener(object : RTCExpress.Listener {
-    override fun onConnected(userId: String) {
-        rtc.joinRoom("room-1")
-    }
-    override fun onMessage(message: RoomMessage) {
-        Log.d("RTC", "${message.fromUserId}: ${message.text}")
-    }
-    override fun onCallInvite(invite: CallInvite) {
-        rtc.acceptCall()
-    }
-})
-
-// 1. Get token from YOUR backend (never ship appSecret in the app)
-val token = RTCExpress.fetchToken(
-    "https://rtcplatform.duckdns.org",
-    TokenRequest(appId = "YOUR_APP_ID", appSecret = "SERVER_ONLY", userId = "user_123")
-)
-
-// 2. Connect
-rtc.init(
-    RTCInitOptions(
-        serverUrl = "https://rtcplatform.duckdns.org",
-        appId = "YOUR_APP_ID",
-        userId = "user_123",
-        token = token.token,
-        mediaMode = "p2p"
-    )
-)
-
-// 3. Chat
-rtc.sendMessage("Hello from Android!")
-
-// 4. Voice call
-rtc.callUser("user_456", video = false)
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-permission android:name="android.permission.CAMERA" />
 ```
 
-## API (MVP)
+## Usage
+
+```kotlin
+val token = RTCExpress.fetchToken(serverUrl, TokenRequest(appId, appSecret, userId))
+
+val rtc = RTCExpress(applicationContext)
+rtc.setListener(object : RTCExpress.Listener {
+    override fun onCallInvite(invite: CallInvite) { /* show ring UI */ }
+    override fun onRemoteVideo(track: VideoTrack) { /* attach to SurfaceViewRenderer */ }
+})
+rtc.setIncomingCallNotifier { invite, display ->
+    // Foreground incoming call — for background use FCM (see docs/PUSH.md)
+}
+rtc.init(RTCInitOptions(serverUrl, appId, userId, token.token, mediaMode = "auto"))
+rtc.joinRoom("room-1")
+
+// 1:1 call
+rtc.callUser("user_b", video = true)
+
+// Group SFU
+rtc.joinVoiceRoom()
+rtc.joinVideoRoom()
+
+// History
+val page = rtc.getMessageHistory("room-1")
+
+// Recording (local mic during call)
+rtc.startRecording()
+val result = rtc.stopRecording()
+```
+
+## API
 
 | Method | Description |
 |--------|-------------|
-| `init(options)` | Connect to signaling |
+| `init(options)` | Connect signaling; fetch SFU config |
 | `joinRoom(roomId)` | Join chat room |
 | `sendMessage(text)` | Send chat message |
-| `callUser(peerId, video)` | Start 1:1 call |
-| `acceptCall()` / `rejectCall()` / `endCall()` | Call controls |
+| `getMessageHistory(roomId)` | Paginated chat history |
+| `callUser(peerId, video)` | Start 1:1 call (P2P or SFU) |
+| `acceptCall` / `rejectCall` / `endCall` | Call controls |
+| `joinVoiceRoom` / `leaveVoiceRoom` | Group voice (SFU) |
+| `joinVideoRoom` / `leaveVideoRoom` | Group video (SFU) |
+| `startRecording` / `stopRecording` | Local mic recording |
 | `muteMicrophone` / `muteCamera` / `switchCamera` | Media controls |
-| `destroy()` | Cleanup |
 
-## Plan features
+## Media modes
 
-Server enforces plan limits (chat / voice / video). Set the project plan in the developer dashboard.
+| `mediaMode` | Behavior |
+|-------------|----------|
+| `p2p` | Direct WebRTC between peers |
+| `sfu` | Always use mediasoup SFU |
+| `auto` | SFU when server provides `sfuUrl` |
+
+## Push notifications
+
+See [docs/PUSH.md](../../docs/PUSH.md) for FCM + ConnectionService integration.
 
 ## Roadmap
 
 - [x] P2P voice + video
-- [x] Chat
-- [ ] SFU group voice/video
-- [ ] Recording
+- [x] Chat + history
+- [x] SFU group voice/video
+- [x] Local recording
+- [x] Incoming call hooks
 - [ ] Maven Central publish
+- [ ] Two-party mixed recording (use web or cloud recording)

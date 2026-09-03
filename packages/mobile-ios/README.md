@@ -1,89 +1,84 @@
 # RTCExpress iOS SDK
 
-Swift package for **chat** and **P2P voice/video calls** against the RTCExpress signaling server.
+Swift package for chat and WebRTC calls against the RTC Platform signaling server.
 
-## Requirements
+## Features
 
-- iOS 15+
-- Microphone and camera usage descriptions in `Info.plist`
+- WebSocket signaling (chat, 1:1 calls)
+- P2P voice + video
+- Chat history (`GET /v1/rooms/:id/messages`)
+- Local call recording (microphone)
+- Incoming call notifier hook for PushKit/CallKit
+- Call busy handling
+- SFU group calls — **requires** [mediasoup-client-swift](https://github.com/VLprojects/mediasoup-client-swift) (see [docs/MOBILE-SFU.md](../../docs/MOBILE-SFU.md))
 
-## Install (Swift Package Manager)
+## Setup
 
-In Xcode: **File → Add Package Dependencies**
+Add to your Xcode project via Swift Package Manager:
 
 ```
-https://github.com/Devs-private-limited/rtc-platform
+File → Add Package Dependencies → path: packages/mobile-ios
 ```
 
-Select package path: `packages/mobile-ios`
-
-Or locally:
+Or in `Package.swift`:
 
 ```swift
-.package(path: "../rtc-platform/packages/mobile-ios")
+.package(path: "../mobile-ios")
 ```
 
-## Quick start
+`Info.plist`:
+
+```xml
+<key>NSMicrophoneUsageDescription</key>
+<string>Voice calls</string>
+<key>NSCameraUsageDescription</key>
+<string>Video calls</string>
+```
+
+## Usage
 
 ```swift
-import RTCExpress
+let token = try await TokenClient.fetchToken(serverUrl: url, request: TokenRequest(...))
 
-final class RoomController: RTCExpressDelegate {
-    let rtc = RTCExpress()
+let rtc = RTCExpress()
+rtc.delegate = self
+rtc.incomingCallNotifier = self
+rtc.initClient(RTCInitOptions(serverUrl: url, appId: appId, userId: userId, token: token.token, mediaMode: "p2p"))
+rtc.joinRoom("room-1")
 
-    func start() async {
-        rtc.delegate = self
+try rtc.callUser("user_b", video: true)
 
-        // 1. Token from YOUR backend — never embed appSecret in the app
-        let token = try await TokenClient.fetchToken(
-            serverUrl: "https://rtcplatform.duckdns.org",
-            request: TokenRequest(appId: "YOUR_APP_ID", appSecret: "SERVER_ONLY", userId: "user_123")
-        )
+let page = try await rtc.getMessageHistory("room-1")
 
-        // 2. Connect
-        rtc.initClient(RTCInitOptions(
-            serverUrl: "https://rtcplatform.duckdns.org",
-            appId: "YOUR_APP_ID",
-            userId: "user_123",
-            token: token.token,
-            mediaMode: "p2p"
-        ))
-    }
-
-    func rtcExpress(_ rtc: RTCExpress, didConnect userId: String) {
-        try? rtc.joinRoom("room-1")
-    }
-
-    func rtcExpress(_ rtc: RTCExpress, didReceive message: RoomMessage) {
-        print("\(message.fromUserId): \(message.text)")
-    }
-
-    func rtcExpress(_ rtc: RTCExpress, didReceive invite: CallInvite) {
-        try? rtc.acceptCall()
-    }
-}
+try rtc.startRecording()
+let result = try rtc.stopRecording()
 ```
 
-## API (MVP)
+## API
 
 | Method | Description |
 |--------|-------------|
-| `initClient(options)` | Connect to signaling |
-| `joinRoom(roomId)` | Join chat room |
-| `sendMessage(text)` | Send chat message |
-| `callUser(peerId, video:)` | Start 1:1 call |
-| `acceptCall()` / `rejectCall()` / `endCall()` | Call controls |
-| `muteMicrophone` / `muteCamera` / `switchCamera` | Media controls |
-| `destroy()` | Cleanup |
+| `initClient(options)` | Connect signaling |
+| `joinRoom` | Join chat room |
+| `sendMessage` | Send chat |
+| `getMessageHistory` | Paginated history |
+| `callUser` / `acceptCall` / `rejectCall` / `endCall` | 1:1 P2P calls |
+| `joinVoiceRoom` / `joinVideoRoom` | Group SFU (needs mediasoup-swift) |
+| `startRecording` / `stopRecording` | Local mic recording |
 
-## Plan features
+## Push / background calls
 
-Server enforces plan limits (chat / voice / video). Set the project plan in the developer dashboard.
+See [docs/PUSH.md](../../docs/PUSH.md) for PushKit + CallKit.
+
+## SFU on iOS
+
+Use `mediaMode: "p2p"` for 1:1 today. For group SFU, follow [docs/MOBILE-SFU.md](../../docs/MOBILE-SFU.md).
 
 ## Roadmap
 
 - [x] P2P voice + video
-- [x] Chat
-- [ ] SFU group voice/video
-- [ ] Recording
+- [x] Chat + history
+- [x] Local recording
+- [x] Incoming call hooks
+- [ ] SFU via mediasoup-client-swift
 - [ ] CocoaPods / SPM registry publish

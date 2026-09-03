@@ -1,0 +1,19 @@
+name: rtcexpress_example
+description: Example app for rtcexpress Flutter plugin.
+publish_to: 'none'
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  rtcexpress:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

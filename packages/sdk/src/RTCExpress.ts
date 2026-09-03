@@ -5,6 +5,7 @@ import type {
   MediaParticipantPayload,
   MessageHistoryPage,
   RoomMessagePayload,
+  RoomRole,
   ServerMessage,
   SfuProducerPayload,
   WebRtcPayload,
@@ -20,6 +21,9 @@ import {
   fetchPlatformConfig,
   fetchToken,
   type CallOptions,
+  type CloudRecordingSession,
+  type CdnStreamSession,
+  type JoinRoomOptions,
   type MediaMode,
   type RTCInitOptions,
   type RTCEvents,
@@ -41,6 +45,7 @@ export class RTCExpress extends EventEmitter {
   private token = "";
   private ws: WebSocket | null = null;
   private roomId: string | null = null;
+  private roomRole: RoomRole | null = null;
 
   private mediaModePref: MediaMode = "auto";
   private resolvedMediaMode: MediaMode = "p2p";
@@ -70,6 +75,28 @@ export class RTCExpress extends EventEmitter {
   private qualityMonitor: QualityMonitor | null = null;
   private qualityMonitoringEnabled = true;
 
+  private autoReconnect = true;
+  private intentionalClose = false;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 10;
+  private reconnectBaseDelayMs = 1000;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private callMediaConnected = false;
+
+  private sessionSnapshot: {
+    roomId: string;
+    inVoiceRoom: boolean;
+    inVideoRoom: boolean;
+    activeCall: {
+      callId: string;
+      peerUserId: string;
+      roomId: string;
+      isCaller: boolean;
+      callType: CallType;
+    } | null;
+    callMediaConnected: boolean;
+  } | null = null;
+
   static fetchToken = fetchToken;
   static fetchPlatformConfig = fetchPlatformConfig;
   static fetchIceConfig = fetchPlatformConfig;
@@ -80,9 +107,10 @@ export class RTCExpress extends EventEmitter {
     this.userId = options.userId;
     this.token = options.token;
     this.mediaModePref = options.mediaMode || "auto";
+    this.autoReconnect = options.autoReconnect !== false;
 
     try {
-      const config = await fetchPlatformConfig(this.serverUrl, this.appId);
+      const config = await fetchPlatformConfig(this.serverUrl, this.appId, this.token);
       this.iceServers = config.iceServers;
       this.sfuUrl = config.sfuUrl;
       this.resolvedMediaMode = this.resolveMediaMode(config.features.voiceSfu);
@@ -112,6 +140,7 @@ export class RTCExpress extends EventEmitter {
   private connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(wsUrl(this.serverUrl, this.token));
+      let settled = false;
 
       socket.onopen = () => {
         this.ws = socket;
@@ -120,18 +149,111 @@ export class RTCExpress extends EventEmitter {
       socket.onmessage = (event) => {
         const message = JSON.parse(event.data) as ServerMessage;
         this.handleServerMessage(message);
-        if (message.type === "connected") {
+        if (message.type === "connected" && !settled) {
+          settled = true;
           resolve();
         }
       };
 
-      socket.onerror = () => reject(new Error("WebSocket connection failed"));
+      socket.onerror = () => {
+        if (!settled) {
+          settled = true;
+          reject(new Error("WebSocket connection failed"));
+        }
+      };
 
       socket.onclose = () => {
         this.ws = null;
         this.emit("disconnected");
+        if (!this.intentionalClose && this.autoReconnect) {
+          this.sessionSnapshot = this.captureSession();
+          void this.scheduleReconnect();
+        }
       };
     });
+  }
+
+  private captureSession() {
+    return {
+      roomId: this.roomId || "",
+      inVoiceRoom: this.inVoiceRoom,
+      inVideoRoom: this.inVideoRoom,
+      activeCall: this.activeCall ? { ...this.activeCall } : null,
+      callMediaConnected: this.callMediaConnected,
+    };
+  }
+
+  private async scheduleReconnect() {
+    if (this.reconnectTimer) return;
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.emit("error", { message: "Could not reconnect to signaling server", code: "reconnect_failed" });
+      return;
+    }
+
+    const delayMs = Math.min(
+      this.reconnectBaseDelayMs * 2 ** this.reconnectAttempts,
+      30_000
+    );
+    this.reconnectAttempts += 1;
+    this.emit("reconnecting", { attempt: this.reconnectAttempts, delayMs });
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.tryReconnect();
+    }, delayMs);
+  }
+
+  private async tryReconnect() {
+    const snapshot = this.sessionSnapshot;
+    try {
+      await this.connect();
+      this.reconnectAttempts = 0;
+      this.emit("reconnected");
+      if (snapshot?.roomId) {
+        await this.restoreSession(snapshot);
+      }
+    } catch {
+      void this.scheduleReconnect();
+    }
+  }
+
+  private waitForRoomJoined(timeoutMs = 5000): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.off("roomJoined", onJoined);
+        reject(new Error("Room join timeout during reconnect"));
+      }, timeoutMs);
+
+      const onJoined = () => {
+        clearTimeout(timer);
+        this.off("roomJoined", onJoined);
+        resolve();
+      };
+      this.on("roomJoined", onJoined);
+    });
+  }
+
+  private async restoreSession(snapshot: NonNullable<typeof this.sessionSnapshot>) {
+    if (!snapshot.roomId) return;
+
+    this.joinRoom(snapshot.roomId);
+    try {
+      await this.waitForRoomJoined();
+    } catch {
+      return;
+    }
+
+    if (snapshot.inVideoRoom) {
+      await this.joinVideoRoom();
+    } else if (snapshot.inVoiceRoom) {
+      await this.joinVoiceRoom();
+    }
+
+    if (snapshot.activeCall && snapshot.callMediaConnected) {
+      const { callId, peerUserId, roomId, isCaller, callType } = snapshot.activeCall;
+      this.activeCall = { callId, peerUserId, roomId, isCaller, callType };
+      await this.startCallMedia(peerUserId, roomId, callId, isCaller, callType);
+    }
   }
 
   private send(message: ClientMessage) {
@@ -173,7 +295,7 @@ export class RTCExpress extends EventEmitter {
   private getSfu() {
     if (!this.sfuUrl) throw new Error("SFU URL not configured");
     if (!this.sfu) {
-      this.sfu = new SfuMediaEngine(this.sfuUrl, this.userId, (m) => this.send(m), (info) => {
+      this.sfu = new SfuMediaEngine(this.sfuUrl, this.userId, this.token, (m) => this.send(m), (info) => {
         this.remoteStreams.set(info.producerId, info.stream);
         this.emit("remoteTrack", info);
       });
@@ -187,16 +309,42 @@ export class RTCExpress extends EventEmitter {
         this.emit("connected", message.payload as { userId: string });
         break;
       case "room_joined": {
-        const payload = message.payload as { roomId: string; members: string[] };
+        const payload = message.payload as { roomId: string; members: string[]; role?: RoomRole };
         this.roomId = payload.roomId;
+        this.roomRole = payload.role ?? this.roomRole;
         this.emit("roomJoined", payload);
         break;
       }
       case "user_joined":
-        this.emit("userJoined", message.payload as { roomId: string; userId: string });
+        this.emit("userJoined", message.payload as { roomId: string; userId: string; role?: RoomRole });
         break;
       case "user_left":
         this.emit("userLeft", message.payload as { roomId: string; userId: string });
+        break;
+      case "user_kicked": {
+        const payload = message.payload as { roomId: string; reason?: string };
+        if (this.roomId === payload.roomId) {
+          void this.leaveVoiceRoom();
+          void this.leaveVideoRoom();
+          this.roomId = null;
+          this.roomRole = null;
+        }
+        this.emit("userKicked", payload);
+        break;
+      }
+      case "user_muted":
+        this.emit("userMuted", message.payload as {
+          roomId: string;
+          targetUserId: string;
+          kind: "audio" | "video";
+          muted: boolean;
+          byUserId: string;
+        });
+        if ((message.payload as { targetUserId: string }).targetUserId === this.userId) {
+          const { kind, muted } = message.payload as { kind: "audio" | "video"; muted: boolean };
+          if (kind === "audio") this.muteMicrophone(muted);
+          else this.muteCamera(muted);
+        }
         break;
       case "message":
         this.emit("message", message.payload as RoomMessagePayload);
@@ -257,14 +405,135 @@ export class RTCExpress extends EventEmitter {
       case "summary_ready":
         this.emit("summaryReady", message.payload as import("./types.js").SummaryReadyEvent);
         break;
-      case "error":
-        this.emit("error", message.payload as { message: string });
+      case "error": {
+        const payload = message.payload as { message: string; code?: string };
+        if (payload.code === "call_busy") {
+          if (this.activeCall?.isCaller) {
+            this.cleanupCall("rejected");
+          }
+        }
+        this.emit("error", payload);
         break;
+      }
     }
   }
 
-  joinRoom(roomId: string) {
-    this.send({ type: "join_room", payload: { roomId } });
+  joinRoom(roomId: string, options: JoinRoomOptions = {}) {
+    if (options.role) this.roomRole = options.role;
+    this.send({ type: "join_room", payload: { roomId, role: options.role } });
+  }
+
+  getRoomRole() {
+    return this.roomRole;
+  }
+
+  kickUser(roomId: string, targetUserId: string) {
+    this.send({ type: "kick_user", payload: { roomId, targetUserId } });
+  }
+
+  muteRemoteUser(
+    roomId: string,
+    targetUserId: string,
+    kind: "audio" | "video",
+    muted: boolean
+  ) {
+    this.send({ type: "mute_remote", payload: { roomId, targetUserId, kind, muted } });
+  }
+
+  endRoom(roomId: string) {
+    this.send({ type: "end_room", payload: { roomId } });
+    if (this.roomId === roomId) {
+      void this.leaveVoiceRoom();
+      void this.leaveVideoRoom();
+      this.roomId = null;
+      this.roomRole = null;
+    }
+    this.emit("roomEnded", { roomId });
+  }
+
+  async startCloudRecording(roomId: string): Promise<CloudRecordingSession> {
+    const res = await fetch(
+      `${this.serverUrl}/v1/rooms/${encodeURIComponent(roomId)}/cloud-recording/start`,
+      { method: "POST", headers: { Authorization: `Bearer ${this.token}` } }
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `Failed to start cloud recording (${res.status})`);
+    }
+    const body = (await res.json()) as { session: CloudRecordingSession };
+    return body.session;
+  }
+
+  async stopCloudRecording(roomId: string): Promise<CloudRecordingSession> {
+    const res = await fetch(
+      `${this.serverUrl}/v1/rooms/${encodeURIComponent(roomId)}/cloud-recording/stop`,
+      { method: "POST", headers: { Authorization: `Bearer ${this.token}` } }
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `Failed to stop cloud recording (${res.status})`);
+    }
+    const body = (await res.json()) as { session: CloudRecordingSession };
+    return body.session;
+  }
+
+  async getCloudRecordingStatus(roomId: string) {
+    const res = await fetch(
+      `${this.serverUrl}/v1/rooms/${encodeURIComponent(roomId)}/cloud-recording`,
+      { headers: { Authorization: `Bearer ${this.token}` } }
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `Failed to load cloud recording status (${res.status})`);
+    }
+    return (await res.json()) as { active: CloudRecordingSession | null };
+  }
+
+  async startCdnStream(roomId: string): Promise<CdnStreamSession> {
+    const res = await fetch(
+      `${this.serverUrl}/v1/rooms/${encodeURIComponent(roomId)}/cdn-stream/start`,
+      { method: "POST", headers: { Authorization: `Bearer ${this.token}` } }
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `Failed to start CDN stream (${res.status})`);
+    }
+    const body = (await res.json()) as { session: CdnStreamSession };
+    return body.session;
+  }
+
+  async stopCdnStream(roomId: string): Promise<CdnStreamSession> {
+    const res = await fetch(
+      `${this.serverUrl}/v1/rooms/${encodeURIComponent(roomId)}/cdn-stream/stop`,
+      { method: "POST", headers: { Authorization: `Bearer ${this.token}` } }
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `Failed to stop CDN stream (${res.status})`);
+    }
+    const body = (await res.json()) as { session: CdnStreamSession };
+    return body.session;
+  }
+
+  async getCdnStreamStatus(roomId: string) {
+    const res = await fetch(
+      `${this.serverUrl}/v1/rooms/${encodeURIComponent(roomId)}/cdn-stream`,
+      { headers: { Authorization: `Bearer ${this.token}` } }
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `Failed to load CDN stream status (${res.status})`);
+    }
+    return (await res.json()) as { active: CdnStreamSession | null };
+  }
+
+  /** Live broadcast: subscribe to host streams without publishing (audience role). */
+  async joinBroadcastAsAudience() {
+    if (!this.roomId) throw new Error("Join a room first with role audience");
+    if (!this.sfuUrl) throw new Error("SFU not available. Start media-sfu service.");
+    await this.getSfu().joinRoom(this.roomId, { recvOnly: true });
+    this.emit("broadcastJoined", { roomId: this.roomId });
+    this.startQualityMonitoring();
   }
 
   leaveRoom(roomId: string) {
@@ -273,6 +542,7 @@ export class RTCExpress extends EventEmitter {
       void this.leaveVoiceRoom();
       void this.leaveVideoRoom();
       this.roomId = null;
+      this.roomRole = null;
     }
   }
 
@@ -380,6 +650,7 @@ export class RTCExpress extends EventEmitter {
 
   private async startCall(peerUserId: string, callType: CallType) {
     if (!this.roomId) throw new Error("Join a room first");
+    if (this.activeCall) throw new Error("Already in a call");
     const callId = randomId();
     this.activeCall = { callId, peerUserId, roomId: this.roomId, isCaller: true, callType };
     this.emit("callState", {
@@ -608,13 +879,23 @@ export class RTCExpress extends EventEmitter {
   }
 
   private collectRecordingStreams() {
-    const streams: MediaStream[] = [];
-    const local = this.getLocalStream();
-    if (local) streams.push(local);
+    const tracks = new Map<string, MediaStreamTrack>();
+
+    const addStream = (stream: MediaStream | null | undefined) => {
+      if (!stream) return;
+      for (const track of stream.getTracks()) {
+        if (track.readyState === "live") tracks.set(track.id, track);
+      }
+    };
+
+    addStream(this.getLocalStream());
+    addStream(this.p2p?.getRemoteStream());
     for (const stream of this.remoteStreams.values()) {
-      streams.push(stream);
+      addStream(stream);
     }
-    return streams;
+
+    if (!tracks.size) return [];
+    return [new MediaStream(Array.from(tracks.values()))];
   }
 
   private emitLocalStream() {
@@ -623,6 +904,20 @@ export class RTCExpress extends EventEmitter {
   }
 
   private handleIncomingCall(payload: CallPeerPayload) {
+    if (this.activeCall) {
+      this.send({
+        type: "call_reject",
+        payload: {
+          callId: payload.callId,
+          fromUserId: this.userId,
+          toUserId: payload.fromUserId,
+          roomId: payload.roomId,
+          callType: payload.callType,
+        },
+      });
+      return;
+    }
+
     const callType = payload.callType || "voice";
     this.activeCall = {
       callId: payload.callId,
@@ -674,6 +969,7 @@ export class RTCExpress extends EventEmitter {
         video: isVideo,
       });
       this.emitLocalStream();
+      this.callMediaConnected = true;
       this.emit("callState", {
         callId,
         state: "connected",
@@ -694,6 +990,7 @@ export class RTCExpress extends EventEmitter {
     }
     this.emitLocalStream();
     p2p.onConnected(() => {
+      this.callMediaConnected = true;
       this.emit("callState", {
         callId,
         state: "connected",
@@ -714,6 +1011,7 @@ export class RTCExpress extends EventEmitter {
   private cleanupCall(state: "ended" | "rejected") {
     if (!this.activeCall) return;
     this.stopQualityMonitoring();
+    this.callMediaConnected = false;
     const { callId, peerUserId, roomId, callType } = this.activeCall;
     this.p2p?.destroy();
     this.p2p = null;
@@ -735,6 +1033,11 @@ export class RTCExpress extends EventEmitter {
   }
 
   destroy() {
+    this.intentionalClose = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.endCall();
     this.leaveVoiceRoom();
     this.leaveVideoRoom();

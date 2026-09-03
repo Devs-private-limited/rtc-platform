@@ -3,12 +3,23 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { SfuManager } from "./sfu.js";
 import { loadSfuEnv } from "./env.js";
+import { createAuthHook } from "./auth.js";
+import { CloudRecordingManager } from "./cloud-recording.js";
+import { CdnStreamManager } from "./cdn-streaming.js";
 
 const env = loadSfuEnv();
 const sfu = new SfuManager(env.announcedIp);
+const cloudRecording = new CloudRecordingManager(sfu, process.env.RECORDINGS_DIR || "./data/recordings");
+const cdnStreaming = new CdnStreamManager(sfu, process.env.CDN_WORK_DIR || "./data/cdn-streams");
+const requireAuth = createAuthHook(env.jwtSecret);
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
+
+app.addHook("preHandler", async (req, reply) => {
+  if (req.url === "/health" || req.url === "/ready") return;
+  await requireAuth(req, reply);
+});
 
 app.get("/health", async () => ({
   ok: true,
@@ -121,6 +132,71 @@ app.post<{
     rtpParameters: consumer.rtpParameters,
   };
 });
+
+app.post<{ Params: { roomId: string }; Body: { sessionId?: string } }>(
+  "/v1/rooms/:roomId/recording/start",
+  async (req, reply) => {
+    try {
+      const session = await cloudRecording.start(req.params.roomId, req.body?.sessionId);
+      return { ok: true, session };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to start recording";
+      return reply.status(400).send({ error: message });
+    }
+  }
+);
+
+app.post<{ Params: { roomId: string }; Body: { sessionId?: string } }>(
+  "/v1/rooms/:roomId/recording/stop",
+  async (req, reply) => {
+    try {
+      const result = await cloudRecording.stop(req.params.roomId);
+      return { ok: true, ...result };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to stop recording";
+      return reply.status(400).send({ error: message });
+    }
+  }
+);
+
+app.post<{ Params: { roomId: string }; Body: { streamKey: string; sessionId: string; rtmpPushUrl: string } }>(
+  "/v1/rooms/:roomId/cdn-stream/start",
+  async (req, reply) => {
+    const { streamKey, sessionId, rtmpPushUrl } = req.body || {};
+    if (!streamKey || !sessionId || !rtmpPushUrl) {
+      return reply.status(400).send({ error: "streamKey, sessionId, and rtmpPushUrl are required" });
+    }
+    try {
+      const session = await cdnStreaming.start(
+        req.params.roomId,
+        streamKey,
+        rtmpPushUrl,
+        sessionId
+      );
+      return { ok: true, session };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to start CDN stream";
+      return reply.status(400).send({ error: message });
+    }
+  }
+);
+
+app.post<{ Params: { roomId: string } }>(
+  "/v1/rooms/:roomId/cdn-stream/stop",
+  async (req, reply) => {
+    try {
+      const session = await cdnStreaming.stop(req.params.roomId);
+      return { ok: true, session };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to stop CDN stream";
+      return reply.status(400).send({ error: message });
+    }
+  }
+);
+
+app.get<{ Params: { roomId: string } }>("/v1/rooms/:roomId/cdn-stream", async (req) => ({
+  active: cdnStreaming.getSession(req.params.roomId),
+}));
 
 await sfu.start();
 await app.listen({ port: env.port, host: "0.0.0.0" });

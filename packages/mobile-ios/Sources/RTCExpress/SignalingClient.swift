@@ -12,7 +12,8 @@ protocol SignalingListener: AnyObject {
     func onWebRtcOffer(_ payload: [String: Any])
     func onWebRtcAnswer(_ payload: [String: Any])
     func onIceCandidate(_ payload: [String: Any])
-    func onError(_ message: String)
+    func onSfuProducer(_ payload: [String: Any])
+    func onError(_ message: String, code: String?)
 }
 
 final class SignalingClient {
@@ -92,8 +93,12 @@ final class SignalingClient {
         case "webrtc_offer": listener?.onWebRtcOffer(payload)
         case "webrtc_answer": listener?.onWebRtcAnswer(payload)
         case "ice_candidate": listener?.onIceCandidate(payload)
+        case "sfu_producer": listener?.onSfuProducer(payload)
         case "error":
-            listener?.onError(payload["message"] as? String ?? "Unknown error")
+            listener?.onError(
+                payload["message"] as? String ?? "Unknown error",
+                payload["code"] as? String
+            )
         default: break
         }
     }

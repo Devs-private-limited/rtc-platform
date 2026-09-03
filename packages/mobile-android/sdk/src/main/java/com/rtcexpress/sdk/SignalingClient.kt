@@ -23,8 +23,9 @@ class SignalingClient(
         fun onCallEnd(payload: JSONObject)
         fun onWebRtcOffer(payload: JSONObject)
         fun onWebRtcAnswer(payload: JSONObject)
-        fun onIceCandidate(payload: JSONObject)
-        fun onError(message: String)
+        fun onWebRtcIceCandidate(payload: JSONObject)
+        fun onSfuProducer(payload: JSONObject)
+        fun onError(message: String, code: String? = null)
     }
 
     private var socket: WebSocket? = null
@@ -96,8 +97,12 @@ class SignalingClient(
             "call_end" -> listener?.onCallEnd(payload)
             "webrtc_offer" -> listener?.onWebRtcOffer(payload)
             "webrtc_answer" -> listener?.onWebRtcAnswer(payload)
-            "ice_candidate" -> listener?.onIceCandidate(payload)
-            "error" -> listener?.onError(payload.optString("message", "Unknown error"))
+            "ice_candidate" -> listener?.onWebRtcIceCandidate(payload)
+            "sfu_producer" -> listener?.onSfuProducer(payload)
+            "error" -> listener?.onError(
+                payload.optString("message", "Unknown error"),
+                payload.optString("code").ifBlank { null }
+            )
         }
     }
 }
