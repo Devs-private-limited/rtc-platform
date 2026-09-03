@@ -442,6 +442,17 @@ export class RTCExpress extends EventEmitter {
     }
   }
 
+  async switchCamera() {
+    if (this.resolvedMediaMode === "sfu" && this.sfu) {
+      await this.sfu.switchCamera();
+    } else if (this.p2p) {
+      await this.p2p.switchCamera();
+    } else {
+      throw new Error("Not in a video call");
+    }
+    this.emitLocalStream();
+  }
+
   async shareScreen() {
     if (this.resolvedMediaMode === "sfu" && this.sfu) {
       await this.sfu.shareScreen({

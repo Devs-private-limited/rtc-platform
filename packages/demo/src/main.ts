@@ -87,6 +87,7 @@ function createPanel(config: PanelConfig) {
       <button class="end danger" disabled hidden>End call</button>
       <button class="mute secondary" disabled hidden>Mute</button>
       <button class="cam secondary" disabled hidden>Cam off</button>
+      <button class="flip-cam secondary" disabled hidden>Flip cam</button>
       <button class="screen secondary" disabled hidden>Share screen</button>
       <button class="record danger" disabled hidden>Record</button>
       <button class="stop-record danger" disabled hidden>Stop &amp; save</button>
@@ -111,6 +112,7 @@ function createPanel(config: PanelConfig) {
   const endBtn = root.querySelector(".end") as HTMLButtonElement;
   const muteBtn = root.querySelector(".mute") as HTMLButtonElement;
   const camBtn = root.querySelector(".cam") as HTMLButtonElement;
+  const flipCamBtn = root.querySelector(".flip-cam") as HTMLButtonElement;
   const screenBtn = root.querySelector(".screen") as HTMLButtonElement;
   const recordBtn = root.querySelector(".record") as HTMLButtonElement;
   const stopRecordBtn = root.querySelector(".stop-record") as HTMLButtonElement;
@@ -156,6 +158,7 @@ function createPanel(config: PanelConfig) {
     endBtn.hidden = !active;
     muteBtn.hidden = !active;
     camBtn.hidden = !active || !video;
+    flipCamBtn.hidden = !active || !video;
     screenBtn.hidden = !active;
     recordBtn.hidden = !active;
     stopRecordBtn.hidden = !active;
@@ -164,6 +167,7 @@ function createPanel(config: PanelConfig) {
     endBtn.disabled = !active;
     muteBtn.disabled = !active;
     camBtn.disabled = !active;
+    flipCamBtn.disabled = !active || !video;
     screenBtn.disabled = !active;
     recordBtn.disabled = !active;
     stopRecordBtn.disabled = !active;
@@ -301,6 +305,7 @@ function createPanel(config: PanelConfig) {
         leaveMediaBtn.disabled = false;
         muteBtn.hidden = false;
         camBtn.hidden = false;
+        flipCamBtn.hidden = false;
         screenBtn.hidden = false;
         recordBtn.hidden = false;
         stopRecordBtn.hidden = false;
@@ -330,6 +335,7 @@ function createPanel(config: PanelConfig) {
         leaveMediaBtn.hidden = true;
         muteBtn.hidden = true;
         camBtn.hidden = true;
+        flipCamBtn.hidden = true;
         screenBtn.hidden = true;
         muted = false;
         camOff = false;
@@ -403,6 +409,15 @@ function createPanel(config: PanelConfig) {
     camOff = !camOff;
     rtc?.muteCamera(camOff);
     camBtn.textContent = camOff ? "Cam on" : "Cam off";
+  };
+
+  flipCamBtn.onclick = async () => {
+    try {
+      await rtc?.switchCamera();
+      log(logEl, "Camera switched");
+    } catch (err) {
+      log(logEl, err instanceof Error ? err.message : "Could not switch camera");
+    }
   };
 
   screenBtn.onclick = async () => {

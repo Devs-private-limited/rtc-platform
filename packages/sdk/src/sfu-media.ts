@@ -28,6 +28,12 @@ export interface RemoteTrackInfo {
 
 export type OnRemoteTrack = (info: RemoteTrackInfo) => void;
 
+type CameraFacing = "user" | "environment";
+
+function videoConstraints(facingMode: CameraFacing): MediaTrackConstraints {
+  return { facingMode: { ideal: facingMode } };
+}
+
 export class SfuMediaEngine {
   private device: Device | null = null;
   private sendTransport: Transport | null = null;
@@ -37,6 +43,7 @@ export class SfuMediaEngine {
   private remoteAudios = new Map<string, HTMLAudioElement>();
   private localStream: MediaStream | null = null;
   private screenStream: MediaStream | null = null;
+  private facingMode: CameraFacing = "user";
   private roomId: string | null = null;
   private producerMeta = new Map<string, { source: MediaSource; kind: MediaKind }>();
   private pendingProduceSource: MediaSource = "microphone";
@@ -129,6 +136,34 @@ export class SfuMediaEngine {
     this.localStream?.getVideoTracks().forEach((t) => {
       t.enabled = !muted;
     });
+  }
+
+  async switchCamera() {
+    const producer = this.producers.get("camera");
+    if (!producer || !this.localStream) {
+      throw new Error("Not in a video session");
+    }
+    if (this.screenStream) {
+      throw new Error("Stop screen share before switching camera");
+    }
+
+    const oldTrack = this.localStream.getVideoTracks()[0];
+    if (!oldTrack) throw new Error("No camera track");
+
+    const nextFacing: CameraFacing = this.facingMode === "user" ? "environment" : "user";
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: videoConstraints(nextFacing),
+    });
+    const newTrack = newStream.getVideoTracks()[0];
+    if (!newTrack) throw new Error("Could not access camera");
+
+    await producer.replaceTrack({ track: newTrack });
+    oldTrack.stop();
+    this.localStream.removeTrack(oldTrack);
+    this.localStream.addTrack(newTrack);
+    this.facingMode = nextFacing;
+    return this.localStream;
   }
 
   getLocalStream() {
@@ -242,7 +277,7 @@ export class SfuMediaEngine {
   ) {
     this.localStream = await navigator.mediaDevices.getUserMedia({
       audio: media.audio,
-      video: media.video,
+      video: media.video ? videoConstraints(this.facingMode) : false,
     });
 
     if (media.audio) {

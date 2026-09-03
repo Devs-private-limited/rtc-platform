@@ -8,12 +8,19 @@ export interface P2pMediaOptions {
 
 export type OnRemoteStream = (stream: MediaStream) => void;
 
+type CameraFacing = "user" | "environment";
+
+function videoConstraints(facingMode: CameraFacing): MediaTrackConstraints {
+  return { facingMode: { ideal: facingMode } };
+}
+
 export class P2pMediaEngine {
   private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private screenStream: MediaStream | null = null;
   private remoteAudio: HTMLAudioElement | null = null;
   private mediaOptions: P2pMediaOptions = { audio: true, video: false };
+  private facingMode: CameraFacing = "user";
 
   constructor(
     private iceServers: RTCIceServer[],
@@ -35,7 +42,7 @@ export class P2pMediaEngine {
     this.peerConnection = new RTCPeerConnection({ iceServers: this.iceServers });
     this.localStream = await navigator.mediaDevices.getUserMedia({
       audio: this.mediaOptions.audio,
-      video: this.mediaOptions.video,
+      video: this.mediaOptions.video ? videoConstraints(this.facingMode) : false,
     });
     this.localStream.getTracks().forEach((track) => {
       this.peerConnection!.addTrack(track, this.localStream!);
@@ -162,6 +169,34 @@ export class P2pMediaEngine {
     this.localStream?.getVideoTracks().forEach((track) => {
       track.enabled = !muted;
     });
+  }
+
+  async switchCamera() {
+    if (!this.peerConnection || !this.localStream) {
+      throw new Error("Not in a video call");
+    }
+    if (this.screenStream) {
+      throw new Error("Stop screen share before switching camera");
+    }
+    const oldTrack = this.localStream.getVideoTracks()[0];
+    if (!oldTrack) throw new Error("No camera track");
+
+    const nextFacing: CameraFacing = this.facingMode === "user" ? "environment" : "user";
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: videoConstraints(nextFacing),
+    });
+    const newTrack = newStream.getVideoTracks()[0];
+    if (!newTrack) throw new Error("Could not access camera");
+
+    const sender = this.peerConnection.getSenders().find((s) => s.track?.kind === "video");
+    if (sender) await sender.replaceTrack(newTrack);
+
+    oldTrack.stop();
+    this.localStream.removeTrack(oldTrack);
+    this.localStream.addTrack(newTrack);
+    this.facingMode = nextFacing;
+    return this.localStream;
   }
 
   destroy() {
