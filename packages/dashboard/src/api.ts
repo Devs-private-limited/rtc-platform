@@ -99,6 +99,8 @@ export interface BillingSummary {
   appId: string;
   plan: string;
   planName: string;
+  planDescription?: string;
+  features?: Record<string, boolean>;
   usage: {
     callMinutes: number;
     messagesSent: number;

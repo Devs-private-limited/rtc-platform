@@ -171,11 +171,14 @@ Usage-based billing with plan tiers, limit tracking, and cost estimates.
 
 ### Plans
 
-| Plan | Call minutes | Messages | Recordings |
-|------|-------------|----------|------------|
-| Free | 100 | 1,000 | 10 |
-| Starter | 1,000 | 10,000 | 100 |
-| Pro | 10,000 | 100,000 | 1,000 |
+| Plan | Features | Call minutes | Messages |
+|------|----------|-------------|----------|
+| Free | Chat only | 100 | 1,000 |
+| Starter | Chat + voice + group voice | 1,000 | 10,000 |
+| Pro | Chat + voice + video + recording + screen share | 10,000 | 100,000 |
+
+Feature gating is enforced server-side (chat, voice calls, video calls, group media, recording).
+Change a project's plan in the dashboard **Billing** tab or `PATCH /v1/admin/apps/:appId/plan`.
 
 ### Admin API
 

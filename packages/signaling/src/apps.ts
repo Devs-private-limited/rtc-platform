@@ -101,12 +101,20 @@ export async function seedDemoApp() {
   const appSecret = process.env.DEMO_APP_SECRET || "demo-secret";
 
   const existing = await db.query(`SELECT 1 FROM apps WHERE app_id = $1`, [appId]);
-  if (existing.rowCount) return;
+  const secretHash = hashSecret(appSecret);
 
-  await db.query(`INSERT INTO apps (app_id, name, secret_hash) VALUES ($1, $2, $3)`, [
+  if (existing.rowCount) {
+    await db.query(`UPDATE apps SET name = $2, plan = 'pro' WHERE app_id = $1`, [
+      appId,
+      "Demo Application",
+    ]);
+    return;
+  }
+
+  await db.query(`INSERT INTO apps (app_id, name, secret_hash, plan) VALUES ($1, $2, $3, 'pro')`, [
     appId,
     "Demo Application",
-    hashSecret(appSecret),
+    secretHash,
   ]);
   console.log(`Seeded demo app: ${appId}`);
 }

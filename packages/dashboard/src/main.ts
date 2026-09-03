@@ -243,10 +243,21 @@ async function renderBilling(el: HTMLElement, appId: string) {
     ["Transcription min", "transcriptionMinutes"],
     ["Quality reports", "qualityReports"],
   ] as const;
+  const featureRows = [
+    ["Chat", "chat"],
+    ["Voice calls", "voice"],
+    ["Video calls", "video"],
+    ["Group voice", "groupVoice"],
+    ["Group video", "groupVideo"],
+    ["Recording", "recording"],
+    ["Transcription", "transcription"],
+    ["Screen share", "screenShare"],
+  ] as const;
 
   el.innerHTML = `
     <section class="card">
       <h2>Billing — ${billing.planName} plan</h2>
+      <p class="muted" style="margin-bottom:12px">${billing.planDescription || ""}</p>
       <div class="grid-2" style="margin-bottom:16px">
         <div class="stat"><div class="label">Estimated cost</div><div class="value">$${billing.estimatedCostUsd}</div></div>
         <div class="stat"><div class="label">Overage cost</div><div class="value">$${billing.overageCostUsd}</div></div>
@@ -254,14 +265,29 @@ async function renderBilling(el: HTMLElement, appId: string) {
       <div class="row" style="margin-bottom:16px">
         <label>Change plan
           <select id="plan-select">
-            <option value="free" ${billing.plan === "free" ? "selected" : ""}>Free</option>
-            <option value="starter" ${billing.plan === "starter" ? "selected" : ""}>Starter</option>
-            <option value="pro" ${billing.plan === "pro" ? "selected" : ""}>Pro</option>
+            <option value="free" ${billing.plan === "free" ? "selected" : ""}>Free — chat only</option>
+            <option value="starter" ${billing.plan === "starter" ? "selected" : ""}>Starter — chat + voice</option>
+            <option value="pro" ${billing.plan === "pro" ? "selected" : ""}>Pro — chat + voice + video</option>
           </select>
         </label>
         <button id="save-plan-btn">Update plan</button>
       </div>
       <div id="plan-error" class="error"></div>
+    </section>
+    <section class="card">
+      <h2>Plan features</h2>
+      <table>
+        <thead><tr><th>Feature</th><th>Included</th></tr></thead>
+        <tbody>
+          ${featureRows.map(([label, key]) => {
+            const enabled = billing.features?.[key];
+            return `<tr>
+              <td>${label}</td>
+              <td><span class="badge ${enabled ? "ok" : "off"}">${enabled ? "yes" : "no"}</span></td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
     </section>
     <section class="card">
       <h2>Usage vs limits</h2>

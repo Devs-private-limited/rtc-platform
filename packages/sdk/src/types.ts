@@ -120,9 +120,11 @@ export async function fetchToken(
 }
 
 export async function fetchPlatformConfig(
-  serverUrl: string
+  serverUrl: string,
+  appId?: string
 ): Promise<import("@rtc/protocol").PlatformConfig> {
-  const res = await fetch(`${serverUrl}/v1/config`);
+  const query = appId ? `?appId=${encodeURIComponent(appId)}` : "";
+  const res = await fetch(`${serverUrl}/v1/config${query}`);
   if (!res.ok) throw new Error("Failed to fetch platform config");
   return res.json();
 }

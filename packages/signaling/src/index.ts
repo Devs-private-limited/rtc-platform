@@ -123,7 +123,9 @@ app.get("/ready", async (_req, reply) => {
   return payload;
 });
 
-app.get("/v1/config", async () => getPlatformConfig());
+app.get<{ Querystring: { appId?: string } }>("/v1/config", async (req) =>
+  getPlatformConfig(req.query.appId)
+);
 app.get("/v1/ice", async () => getIceConfig());
 
 app.post<{ Body: TokenRequest }>("/v1/token", async (req, reply) => {

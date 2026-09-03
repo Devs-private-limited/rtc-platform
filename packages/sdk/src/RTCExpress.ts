@@ -82,7 +82,7 @@ export class RTCExpress extends EventEmitter {
     this.mediaModePref = options.mediaMode || "auto";
 
     try {
-      const config = await fetchPlatformConfig(this.serverUrl);
+      const config = await fetchPlatformConfig(this.serverUrl, this.appId);
       this.iceServers = config.iceServers;
       this.sfuUrl = config.sfuUrl;
       this.resolvedMediaMode = this.resolveMediaMode(config.features.voiceSfu);

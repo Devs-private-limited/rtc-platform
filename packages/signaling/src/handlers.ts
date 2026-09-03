@@ -18,6 +18,8 @@ import { endCallSession, startCallSession } from "./metering.js";
 import { saveRecording } from "./recordings.js";
 import { saveQualityReport } from "./quality.js";
 import { maybeDispatchBillingAlert } from "./billing.js";
+import { checkAppFeature } from "./plan-features.js";
+import type { PlanFeature } from "./billing-plans.js";
 
 interface HandlerContext {
   message: ClientMessage;
@@ -42,6 +44,24 @@ async function relayToUser(
       payload: { message: `User ${toUserId} is offline` },
     });
   }
+}
+
+async function requireFeature(
+  ctx: HandlerContext,
+  feature: PlanFeature
+): Promise<boolean> {
+  const result = await checkAppFeature(ctx.claims.appId, feature);
+  if (result.allowed) return true;
+  ctx.send(ctx.ws, {
+    type: "error",
+    payload: {
+      message: result.message,
+      code: "plan_feature_denied",
+      feature: result.feature,
+      plan: result.plan,
+    },
+  });
+  return false;
 }
 
 export async function handleClientMessage(ctx: HandlerContext) {
@@ -96,6 +116,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
         text: string;
         clientMsgId?: string;
       };
+      if (!(await requireFeature(ctx, "chat"))) return;
       if (typeof text !== "string" || !text.length) {
         ctx.send(ws, { type: "error", payload: { message: "text is required" } });
         return;
@@ -140,6 +161,9 @@ export async function handleClientMessage(ctx: HandlerContext) {
         ctx.send(ws, { type: "error", payload: { message: "Join the room first" } });
         return;
       }
+      const callType = (message.payload as CallInvitePayload).callType || "voice";
+      const feature: PlanFeature = callType === "video" ? "video" : "voice";
+      if (!(await requireFeature(ctx, feature))) return;
       await relayToUser(ctx, toUserId, "call_invite", {
         callId,
         roomId,
@@ -161,6 +185,11 @@ export async function handleClientMessage(ctx: HandlerContext) {
     case "call_reject":
     case "call_end": {
       const payload = message.payload as CallPeerPayload;
+      if (message.type === "call_accept") {
+        const callType = payload.callType || "voice";
+        const feature: PlanFeature = callType === "video" ? "video" : "voice";
+        if (!(await requireFeature(ctx, feature))) return;
+      }
       await relayToUser(ctx, payload.toUserId, message.type, {
         ...payload,
         fromUserId: userId,
@@ -217,6 +246,11 @@ export async function handleClientMessage(ctx: HandlerContext) {
         ctx.send(ctx.ws, { type: "error", payload: { message: "Invalid SFU payload" } });
         return;
       }
+      if (payload.kind === "video") {
+        const feature: PlanFeature =
+          payload.source === "screen" ? "screenShare" : "video";
+        if (!(await requireFeature(ctx, feature))) return;
+      }
       const messagePayload = {
         roomId: payload.roomId,
         producerId: payload.producerId,
@@ -255,6 +289,11 @@ export async function handleClientMessage(ctx: HandlerContext) {
         return;
       }
 
+      if (message.type === "join_media") {
+        const feature: PlanFeature = kind === "video" ? "groupVideo" : "groupVoice";
+        if (!(await requireFeature(ctx, feature))) return;
+      }
+
       const joining = message.type === "join_media";
       const members = (await ctx.rooms.getMembers(roomId)).filter((id) => id !== userId);
       for (const memberId of members) {
@@ -276,6 +315,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
 
     case "recording_ready": {
       const payload = message.payload as RecordingReadyPayload;
+      if (!(await requireFeature(ctx, "recording"))) return;
       if (!payload.roomId || payload.durationMs == null || !payload.mimeType) {
         ctx.send(ctx.ws, { type: "error", payload: { message: "Invalid recording payload" } });
         return;

@@ -1,5 +1,37 @@
 export type BillingPlan = "free" | "starter" | "pro";
 
+export type PlanFeature =
+  | "chat"
+  | "voice"
+  | "video"
+  | "groupVoice"
+  | "groupVideo"
+  | "recording"
+  | "transcription"
+  | "screenShare";
+
+export interface PlanFeatures {
+  chat: boolean;
+  voice: boolean;
+  video: boolean;
+  groupVoice: boolean;
+  groupVideo: boolean;
+  recording: boolean;
+  transcription: boolean;
+  screenShare: boolean;
+}
+
+export const FEATURE_NAMES: Record<PlanFeature, string> = {
+  chat: "Chat",
+  voice: "Voice calls",
+  video: "Video calls",
+  groupVoice: "Group voice",
+  groupVideo: "Group video",
+  recording: "Call recording",
+  transcription: "Transcription",
+  screenShare: "Screen share",
+};
+
 export interface PlanLimits {
   callMinutes: number;
   messages: number;
@@ -17,13 +49,16 @@ export interface PlanRates {
 
 export interface PlanDefinition {
   name: string;
+  description: string;
   limits: PlanLimits;
   rates: PlanRates;
+  features: PlanFeatures;
 }
 
 export const BILLING_PLANS: Record<BillingPlan, PlanDefinition> = {
   free: {
     name: "Free",
+    description: "Chat only",
     limits: {
       callMinutes: 100,
       messages: 1000,
@@ -32,9 +67,20 @@ export const BILLING_PLANS: Record<BillingPlan, PlanDefinition> = {
       qualityReports: 500,
     },
     rates: { callMinute: 0, message: 0, recording: 0, transcriptionMinute: 0 },
+    features: {
+      chat: true,
+      voice: false,
+      video: false,
+      groupVoice: false,
+      groupVideo: false,
+      recording: false,
+      transcription: false,
+      screenShare: false,
+    },
   },
   starter: {
     name: "Starter",
+    description: "Chat + voice",
     limits: {
       callMinutes: 1000,
       messages: 10000,
@@ -48,9 +94,20 @@ export const BILLING_PLANS: Record<BillingPlan, PlanDefinition> = {
       recording: 0.05,
       transcriptionMinute: 0.02,
     },
+    features: {
+      chat: true,
+      voice: true,
+      video: false,
+      groupVoice: true,
+      groupVideo: false,
+      recording: false,
+      transcription: false,
+      screenShare: false,
+    },
   },
   pro: {
     name: "Pro",
+    description: "Chat + voice + video",
     limits: {
       callMinutes: 10000,
       messages: 100000,
@@ -64,8 +121,22 @@ export const BILLING_PLANS: Record<BillingPlan, PlanDefinition> = {
       recording: 0.04,
       transcriptionMinute: 0.015,
     },
+    features: {
+      chat: true,
+      voice: true,
+      video: true,
+      groupVoice: true,
+      groupVideo: true,
+      recording: true,
+      transcription: true,
+      screenShare: true,
+    },
   },
 };
+
+export function getPlanFeatures(plan: BillingPlan): PlanFeatures {
+  return BILLING_PLANS[plan].features;
+}
 
 export interface UsageBreakdown {
   callMinutes: number;
@@ -89,6 +160,8 @@ export interface BillingSummary {
   appId: string;
   plan: BillingPlan;
   planName: string;
+  planDescription: string;
+  features: PlanFeatures;
   period: { from: string | null; to: string | null };
   usage: UsageBreakdown;
   limits: PlanLimits;
@@ -145,6 +218,8 @@ export function computeBillingSummary(
     appId,
     plan,
     planName: def.name,
+    planDescription: def.description,
+    features: def.features,
     period,
     usage,
     limits,
