@@ -4,6 +4,9 @@ import { getPool } from "./db.js";
 
 import type { BillingPlan } from "./billing-plans.js";
 
+/** Published in the README, so it must never be live on a public deployment. */
+const DEV_DEMO_SECRET = "demo-secret";
+
 export interface AppRecord {
   appId: string;
   name: string;
@@ -89,7 +92,7 @@ export async function verifyAppCredentials(appId: string, appSecret: string) {
 
 function verifyEnvCredentials(appId: string, appSecret: string) {
   const expectedAppId = process.env.DEMO_APP_ID || "demo-app";
-  const expectedSecret = process.env.DEMO_APP_SECRET || "demo-secret";
+  const expectedSecret = process.env.DEMO_APP_SECRET || DEV_DEMO_SECRET;
   return appId === expectedAppId && appSecret === expectedSecret;
 }
 
@@ -98,7 +101,31 @@ export async function seedDemoApp() {
   if (!db) return;
 
   const appId = process.env.DEMO_APP_ID || "demo-app";
-  const appSecret = process.env.DEMO_APP_SECRET || "demo-secret";
+  const appSecret = process.env.DEMO_APP_SECRET || DEV_DEMO_SECRET;
+
+  // The demo credentials are published in the README, so seeding them on a
+  // public deployment hands anyone a working token — and because the row is
+  // seeded as `plan = 'pro'`, it would bypass plan gating entirely. In
+  // production the demo app is only created when an explicit, non-default
+  // secret is supplied.
+  if (process.env.NODE_ENV === "production" && appSecret === DEV_DEMO_SECRET) {
+    // Also deactivate a demo app left behind by an earlier deploy that did
+    // seed it, so redeploying is enough to close the hole — no manual SQL.
+    const stale = await db.query(`SELECT secret_hash, active FROM apps WHERE app_id = $1`, [appId]);
+    if (stale.rowCount && bcrypt.compareSync(DEV_DEMO_SECRET, stale.rows[0].secret_hash)) {
+      if (stale.rows[0].active) {
+        await db.query(`UPDATE apps SET active = FALSE WHERE app_id = $1`, [appId]);
+        console.warn(
+          `Deactivated demo app "${appId}": it was seeded with the published default secret.`
+        );
+      }
+    }
+    console.log(
+      "Skipping demo app seed: DEMO_APP_SECRET is unset or default. " +
+        "Set it to a strong value to enable a demo app in production."
+    );
+    return;
+  }
 
   const existing = await db.query(`SELECT 1 FROM apps WHERE app_id = $1`, [appId]);
   const secretHash = hashSecret(appSecret);

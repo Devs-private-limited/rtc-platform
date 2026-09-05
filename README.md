@@ -379,13 +379,22 @@ npm run build:sdk
 
 Output: `packages/sdk/dist` (ESM + CJS + types). See `packages/sdk/README.md` for integration guide.
 
-## Demo credentials (auto-seeded)
+## Demo credentials (development only)
 
 | Key | Value |
 |-----|-------|
 | App ID | `demo-app` |
 | App Secret | `demo-secret` |
 | Admin key | `dev-admin-key` |
+
+> **These are public, so they are never seeded in production.** With
+> `NODE_ENV=production` the demo app is skipped unless `DEMO_APP_SECRET` is set
+> to a strong value, and a demo app left over from an earlier deploy that used
+> the default secret is deactivated automatically on startup.
+>
+> To keep a working demo on a public deployment, set `DEMO_APP_SECRET` to a
+> generated value (`openssl rand -hex 24`) — it is then seeded with that secret
+> instead.
 
 ## API overview
 
