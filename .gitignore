@@ -6,3 +6,6 @@ data/
 
 .env.production
 scripts/vm-deploy.sh
+
+# tsc output from packages/mobile-react-native (prepare script)
+lib/
