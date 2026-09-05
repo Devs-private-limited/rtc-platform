@@ -27,6 +27,7 @@ import { registerQualityRoutes } from "./routes/quality.js";
 import { registerBillingRoutes } from "./routes/billing.js";
 import { registerMediaSessionRoutes } from "./routes/media-sessions.js";
 import { registerLeadRoutes } from "./routes/leads.js";
+import { registerDemoTokenRoutes } from "./routes/demo-token.js";
 import { endMediaSessionsForUser } from "./media-sessions.js";
 import { registerMessageRoutes } from "./routes/messages.js";
 import { endActiveCallsForUser } from "./metering.js";
@@ -66,6 +67,7 @@ await registerQualityRoutes(app);
 await registerBillingRoutes(app);
 await registerMediaSessionRoutes(app);
 await registerLeadRoutes(app);
+await registerDemoTokenRoutes(app, { jwtSecret: env.jwtSecret });
 
 let rooms: RoomStore = new MemoryRoomStore();
 const roomRoles = new MemoryRoomRoleStore();

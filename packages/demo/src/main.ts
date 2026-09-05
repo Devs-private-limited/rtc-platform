@@ -3,8 +3,27 @@ import { RTCExpress } from "@rtc/sdk";
 
 const SERVER_URL = window.location.origin;
 const APP_ID = "demo-app";
-const APP_SECRET = "demo-secret";
 const DEFAULT_ROOM = "room-1";
+
+/**
+ * Asks the server to mint a demo token.
+ *
+ * The app secret deliberately never reaches the browser — this page is served
+ * publicly, so anything embedded here is public too. The server decides whether
+ * the demo is enabled and issues the token itself.
+ */
+async function fetchDemoToken(userId: string, roomId?: string) {
+  const res = await fetch(`${SERVER_URL}/v1/demo/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, roomId }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error || `Failed to fetch token (${res.status})`);
+  }
+  return (await res.json()) as { token: string; expiresIn: number };
+}
 
 interface PanelConfig {
   title: string;
@@ -220,12 +239,7 @@ function createPanel(config: PanelConfig) {
       const userId = userIdInput.value.trim();
       if (!userId) return;
       log(logEl, "Fetching token...");
-      const tokenRes = await RTCExpress.fetchToken(SERVER_URL, {
-        appId: APP_ID,
-        appSecret: APP_SECRET,
-        userId,
-        roomId: roomIdInput.value.trim(),
-      });
+      const tokenRes = await fetchDemoToken(userId, roomIdInput.value.trim());
       rtc = new RTCExpress();
       wireRtc(rtc);
 
