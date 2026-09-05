@@ -394,7 +394,29 @@ Output: `packages/sdk/dist` (ESM + CJS + types). See `packages/sdk/README.md` fo
 >
 > To keep a working demo on a public deployment, set `DEMO_APP_SECRET` to a
 > generated value (`openssl rand -hex 24`) — it is then seeded with that secret
-> instead.
+> instead, and a previously deactivated demo app is re-enabled.
+
+### The demo page never holds a secret
+
+`packages/demo` does not embed an app secret. It is served publicly, so anything
+in its bundle is public too. It calls **`POST /v1/demo/token`**, and the server
+issues the token — rate limited per IP, and only while a demo app is enabled.
+
+`GET /v1/demo/status` reports whether the demo is available, so the page can say
+so rather than failing at the first click.
+
+Behaviour in production:
+
+| `DEMO_APP_SECRET` | Demo app | `/v1/demo/token` |
+|---|---|---|
+| unset, no prior demo app | not created | `404` |
+| unset, prior app used the **published** secret | deactivated on boot | `404` |
+| set to a strong value | created or re-enabled with that secret | issues tokens |
+| unset, but a prior app used a **strong** secret | left enabled | issues tokens |
+
+That last row is intentional: nothing is exposed, since the secret is unknown
+and `/v1/demo/token` is public by design. To switch a demo off entirely,
+deactivate the app rather than removing the variable.
 
 ## API overview
 

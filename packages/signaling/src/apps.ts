@@ -43,6 +43,24 @@ export async function createApp(name: string) {
   return { appId, appSecret, name };
 }
 
+/** The app id the demo client is served against, if one is configured. */
+export function getDemoAppId() {
+  return process.env.DEMO_APP_ID || "demo-app";
+}
+
+/**
+ * True only when a demo app exists and is enabled. Used to decide whether the
+ * public demo-token route will issue anything — a deactivated demo app (see
+ * seedDemoApp) means the demo is off.
+ */
+export async function isDemoAppEnabled(): Promise<boolean> {
+  const db = getPool();
+  if (!db) return false;
+
+  const result = await db.query(`SELECT active FROM apps WHERE app_id = $1`, [getDemoAppId()]);
+  return Boolean(result.rowCount && result.rows[0].active);
+}
+
 export async function listApps(): Promise<AppRecord[]> {
   const db = getPool();
   if (!db) throw new Error("Database not configured");
@@ -131,10 +149,13 @@ export async function seedDemoApp() {
   const secretHash = hashSecret(appSecret);
 
   if (existing.rowCount) {
-    await db.query(`UPDATE apps SET name = $2, plan = 'pro' WHERE app_id = $1`, [
-      appId,
-      "Demo Application",
-    ]);
+    // Also reset the secret and reactivate. Without this, a demo app that an
+    // earlier deploy deactivated for using the published secret could never be
+    // switched back on — setting DEMO_APP_SECRET would appear to do nothing.
+    await db.query(
+      `UPDATE apps SET name = $2, plan = 'pro', secret_hash = $3, active = TRUE WHERE app_id = $1`,
+      [appId, "Demo Application", secretHash]
+    );
     return;
   }
 
