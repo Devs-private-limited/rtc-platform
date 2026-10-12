@@ -94,13 +94,13 @@ async function renderHome() {
       ${error ? `<div class="error">${escapeHtml(error)}</div>` : ""}
       <div class="app-list" id="app-list">
         ${apps.length ? apps.map((a) => `
-          <div class="app-item" data-app="${escapeHtml(a.appId)}">
+          <button type="button" class="app-item" data-app="${escapeHtml(a.appId)}">
             <div>
               <strong>${escapeHtml(a.name)}</strong>
               <span>${escapeHtml(a.appId)}</span>
             </div>
             <span class="badge ${a.active ? "ok" : "off"}">${a.active ? "active" : "inactive"}</span>
-          </div>
+          </button>
         `).join("") : `<div class="empty">No projects yet. Create one below.</div>`}
       </div>
     </section>

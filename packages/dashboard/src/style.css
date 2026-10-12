@@ -10,13 +10,13 @@
 .customer-table table { width:100%; min-width:700px; }
 .customer-table td,.customer-table th { text-align:left; padding:12px; overflow-wrap:anywhere; }
 .customer-profile { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin:20px 0; }
-.customer-profile dt { color:#94a3b8; text-transform:capitalize; }
+.customer-profile dt { color:#53666d; text-transform:capitalize; }
 .customer-profile dd { margin:4px 0 0; overflow-wrap:anywhere; }
 
 body {
   font-family: "DM Sans", system-ui, sans-serif;
-  background: #0b1220;
-  color: #e2e8f0;
+  background: #f5f8f7;
+  color: #172e35;
   min-height: 100dvh;
 }
 
@@ -40,13 +40,13 @@ header.top h1 {
 }
 
 header.top p {
-  color: #94a3b8;
+  color: #53666d;
   font-size: 0.9rem;
 }
 
 .card {
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: #ffffff;
+  border: 1px solid #dce5e2;
   border-radius: 16px;
   padding: 20px;
   margin-bottom: 16px;
@@ -74,9 +74,9 @@ textarea {
 input,
 select,
 textarea {
-  border: 1px solid #475569;
-  background: #0f172a;
-  color: #e2e8f0;
+  border: 1px solid #c3d2cc;
+  background: #f8faf9;
+  color: #172e35;
   border-radius: 10px;
   padding: 10px 12px;
 }
@@ -92,13 +92,13 @@ button {
   border-radius: 10px;
   padding: 10px 14px;
   cursor: pointer;
-  background: #2563eb;
+  background: #087e72;
   color: white;
   font-weight: 600;
 }
 
 button.secondary {
-  background: #334155;
+  background: #dce5e2;
 }
 
 button.danger {
@@ -117,14 +117,14 @@ button:disabled {
 }
 
 .stat {
-  background: #0f172a;
-  border: 1px solid #334155;
+  background: #f8faf9;
+  border: 1px solid #dce5e2;
   border-radius: 12px;
   padding: 14px;
 }
 
 .stat .label {
-  color: #94a3b8;
+  color: #53666d;
   font-size: 0.8rem;
   margin-bottom: 4px;
 }
@@ -142,13 +142,13 @@ table {
 
 th,
 td {
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid #dce5e2;
   padding: 10px 8px;
   text-align: left;
 }
 
 th {
-  color: #94a3b8;
+  color: #53666d;
   font-weight: 600;
 }
 
@@ -161,18 +161,18 @@ th {
 }
 
 .badge.ok {
-  background: #14532d;
-  color: #86efac;
+  background: #e0f3e9;
+  color: #176340;
 }
 
 .badge.fail {
-  background: #7f1d1d;
-  color: #fca5a5;
+  background: #fdecec;
+  color: #a32c2c;
 }
 
 .badge.off {
-  background: #334155;
-  color: #cbd5e1;
+  background: #dce5e2;
+  color: #53666d;
 }
 
 .tabs {
@@ -183,11 +183,11 @@ th {
 }
 
 .tab {
-  background: #334155;
+  background: #dce5e2;
 }
 
 .tab.active {
-  background: #2563eb;
+  background: #087e72;
 }
 
 .app-list {
@@ -201,14 +201,14 @@ th {
   align-items: center;
   gap: 12px;
   padding: 14px;
-  background: #0f172a;
-  border: 1px solid #334155;
+  background: #f8faf9;
+  border: 1px solid #dce5e2;
   border-radius: 12px;
   cursor: pointer;
 }
 
 .app-item:hover {
-  border-color: #2563eb;
+  border-color: #087e72;
 }
 
 .app-item strong {
@@ -216,22 +216,22 @@ th {
 }
 
 .app-item span {
-  color: #94a3b8;
+  color: #53666d;
   font-size: 0.85rem;
 }
 
 .muted {
-  color: #94a3b8;
+  color: #53666d;
   font-size: 0.85rem;
 }
 
 .error {
-  color: #fca5a5;
+  color: #a32c2c;
   margin-top: 8px;
 }
 
 .secret-box {
-  background: #0f172a;
+  background: #f8faf9;
   border: 1px solid #16a34a;
   border-radius: 10px;
   padding: 12px;
@@ -256,8 +256,8 @@ th {
 }
 
 pre.code {
-  background: #0f172a;
-  border: 1px solid #334155;
+  background: #f8faf9;
+  border: 1px solid #dce5e2;
   border-radius: 10px;
   padding: 14px;
   overflow-x: auto;
@@ -266,7 +266,48 @@ pre.code {
 }
 
 .empty {
-  color: #94a3b8;
+  color: #53666d;
   padding: 20px 0;
   text-align: center;
+}
+
+/* Shared visual language with the RTCExpress website and console. */
+body { line-height:1.6; }
+.admin-brandbar { background:#fffefa; border-bottom:1px solid #dce5e2; padding:18px max(24px,calc((100vw - 1200px)/2)); display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.admin-brand { display:flex; align-items:center; gap:10px; font-size:23px; font-weight:700; letter-spacing:-.8px; color:#172e35; text-decoration:none; }
+.admin-brand span { display:grid; place-items:center; width:36px; height:36px; background:#087e72; color:white; border-radius:11px; font-size:28px; }
+.admin-edition { font-size:11px; letter-spacing:1.5px; font-weight:700; color:#53666d; }
+#app { padding-top:36px; }
+header.top { margin-bottom:28px; }
+header.top h1 { font-size:clamp(1.5rem,3vw,2rem); letter-spacing:-.8px; }
+header.top p { margin-top:5px; }
+.card { padding:26px; box-shadow:0 3px 16px #173c3504; }
+.card h2 { font-size:1.15rem; margin-bottom:18px; }
+a { color:#087e72; text-underline-offset:3px; }
+a:hover { color:#065d54; }
+button { min-height:44px; transition:background .15s; }
+button:hover:not(:disabled) { background:#06685e; }
+button.secondary,.tab { background:#fff; border:1px solid #c3d2cc; color:#24453e; }
+button.secondary:hover:not(:disabled),.tab:hover:not(:disabled) { background:#edf5f1; }
+.tab.active { color:#fff; border-color:#087e72; }
+button.danger:hover:not(:disabled) { background:#b91c1c; }
+input,select,textarea { background:#fff; min-width:0; max-width:100%; }
+input:not([type=checkbox]),select { min-height:46px; }
+input[type=checkbox] { flex:0 0 auto; accent-color:#087e72; }
+:focus-visible { outline:3px solid #76bfb4; outline-offset:3px; }
+.app-item { background:#fff; padding:18px; text-align:left; color:#172e35; width:100%; }
+.app-item:hover:not(:disabled) { background:#f0f7f3; }
+.app-item strong { font-size:1rem; }
+.app-item .badge.ok { color:#176340; }
+.app-item .badge.off { color:#53666d; }
+th { background:#f5f8f7; font-size:.75rem; letter-spacing:.03em; }
+tbody tr:hover { background:#f8fbf9; }
+.secret-box { background:#eef8f2; }
+pre.code { color:#24453e; }
+@media(max-width:600px) {
+ .admin-brandbar { padding:16px; } .admin-edition { font-size:9px; }
+ #app { padding:24px 16px; } .card { padding:18px; }
+ header.top>.row { width:100%; } header.top>.row button { flex:1; }
+ .row>input,.row>select { flex-basis:100%; }
+ .app-item { overflow-wrap:anywhere; } .customer-table { max-width:100%; }
 }
