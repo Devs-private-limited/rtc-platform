@@ -1,3 +1,4 @@
+import { renderEnquiries } from "./enquiries";
 import "./style.css";
 import { api, getAdminKey, setAdminKey, type AppRecord } from "./api";
 import { renderCustomers, escapeHtml } from './customers';
@@ -86,7 +87,7 @@ async function renderHome() {
         <h1>RTCExpress Administration</h1>
         <p>Projects & developer tools</p>
       </div>
-      <div class="row"><button id="customers-btn">Customers & payments</button><button class="secondary" id="logout-btn">Sign out</button></div>
+      <div class="row"><button id="enquiries-btn">Customer enquiries</button><button id="customers-btn">Customers & payments</button><button class="secondary" id="logout-btn">Sign out</button></div>
     </header>
     <section class="card">
       <h2>Projects</h2>
@@ -123,6 +124,7 @@ async function renderHome() {
     selectedApp = null;
     renderLogin();
   };
+  document.getElementById('enquiries-btn')!.onclick=()=>renderEnquiries(app,()=>void renderHome(),()=>{setAdminKey('');selectedApp=null;renderLogin();});
   document.getElementById('customers-btn')!.onclick=()=>renderCustomers(app,()=>void renderHome(),()=>{setAdminKey('');selectedApp=null;renderLogin();});
 
   document.querySelectorAll(".app-item").forEach((el) => {

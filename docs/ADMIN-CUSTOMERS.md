@@ -25,3 +25,9 @@ Instamojo checkout and server-side verification are not connected. The UI explic
 Admin APIs `GET /v1/admin/customers` and `GET /v1/admin/customers/:accountId` require `x-admin-key`; customer bearer tokens cannot access them. Portal APIs `GET/PUT /v1/portal/business-profile` validate the portal session version and derive the account from authenticated App ID, never caller-supplied account IDs. Responses use no-store caching. Profile updates are rate limited and bounded; admin queries are parameterized and paginated.
 
 The admin URL is not linked from the customer site. Anyone who knows its URL can reach the login screen, but all customer/payment records still require admin authentication. The URL and noindex directives are not access controls.
+
+## Customer enquiries
+
+Open the private `/admin/` dashboard, authenticate with the administrator key, then select **Customer enquiries**. The screen uses the existing protected `GET /v1/admin/leads` endpoint. It shows the latest 500 records, email, company/product, source and last submission time. Search and source filters apply to the loaded records only; the all-time total remains visible. Repeated submissions from the same email/source update the existing record. Refresh retrieves new requests. Compose email opens the administrator's configured mail application; sending and follow-up are manual.
+
+Deploy updated dashboard assets using the web-build service (see DEMO-DEPLOYMENT.md). No signaling rebuild or database migration is needed for this screen. It does not appear in the public customer portal. Browser fixture checks cover rendering, escaped user text, filtering, request failures and sign-out; verify the real test enquiry after deployment.
