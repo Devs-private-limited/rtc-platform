@@ -81,6 +81,7 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
       PUBLIC_WEBSITE_URL: ${PUBLIC_WEBSITE_URL:-}
+      ENQUIRY_ALERT_TO: ${ENQUIRY_ALERT_TO:-}
       RECORDINGS_DIR: /data/recordings
     volumes:
       - recordings:/data/recordings

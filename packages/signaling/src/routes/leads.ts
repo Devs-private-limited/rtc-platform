@@ -13,6 +13,30 @@ import { requireAdmin } from "./admin.js";
 const SUBMIT_LIMIT = 5;
 const SUBMIT_WINDOW_MS = 60 * 60 * 1000;
 
+async function sendEnquiryAlert(input: { email: string; company: string | null; source: string }) {
+  const recipient = process.env.ENQUIRY_ALERT_TO;
+  if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM || !recipient) return false;
+
+  const company = input.company || "Not provided";
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: process.env.EMAIL_FROM,
+      to: [recipient],
+      reply_to: input.email,
+      subject: `New RTCExpress enquiry from ${input.email}`,
+      text: `A new ${input.source} enquiry was received.\n\nEmail: ${input.email}\nCompany / product: ${company}\nSource: ${input.source}\n\nReply directly to this email to contact the person.`,
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error(`Email provider rejected enquiry alert (${response.status})`);
+  return true;
+}
+
 export async function registerLeadRoutes(app: FastifyInstance) {
   // Public — called by the marketing site's early-access form. No auth by
   // design; abuse is bounded by the IP rate limit and a honeypot field.
@@ -37,12 +61,18 @@ export async function registerLeadRoutes(app: FastifyInstance) {
     }
 
     try {
+      const source = req.body?.source === "demo" ? "demo" : "website";
       await saveLead({
         email,
         company,
-        source: req.body?.source === "demo" ? "demo" : "website",
+        source,
         userAgent: req.headers["user-agent"] || null,
       });
+      // Saving the enquiry is the primary action. An alert failure must never
+      // make a visitor think their request was lost.
+      void sendEnquiryAlert({ email, company, source }).catch((err) =>
+        app.log.error({ err, email }, "Unable to send customer enquiry alert")
+      );
       return reply.status(201).send({ ok: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to record signup";
