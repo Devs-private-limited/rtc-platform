@@ -15,7 +15,7 @@ Run `node scripts/restore-drill.mjs /path/to/backup.dump` to restore into a new 
 ## Optional provider configuration
 
 - Android push: `FCM_CONFIG_FILE`, pointing to a read-only mounted service-account mapping. See [push setup](MANAGED-PUSH.md).
-- Account email: `RESEND_API_KEY`, `EMAIL_FROM` (a provider-verified sender), `PUBLIC_WEBSITE_URL` (HTTPS website origin). Email verification/reset use [Resend's sending API](https://resend.com/docs/api-reference/emails/send-email), with hashed single-use 30-minute tokens. No live mail provider has been configured or tested by this change. Request/consume routes are rate-limited.
+- Account email: `RESEND_API_KEY`, `EMAIL_FROM` (a provider-verified sender), `PUBLIC_WEBSITE_URL` (HTTPS website origin). Email verification/reset use [Resend's sending API](https://resend.com/docs/api-reference/emails/send-email), with hashed single-use 30-minute tokens. Request/consume routes are rate-limited. Test a reset email after deployment before relying on this flow.
 - Secret rotation and password changes revoke existing portal sessions. RTC tokens are not revoked immediately; they expire normally. Email verification records status but is not yet a mandatory access gate for existing users.
 
 Pass these variables explicitly through your deployment configuration and mount secrets server-side. Never put private keys or mail API keys into `VITE_*` variables. No credentials are required to build the code.

@@ -76,6 +76,11 @@ services:
       TURN_PASSWORD: ${TURN_PASSWORD}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DEMO_APP_SECRET: ${DEMO_APP_SECRET:-}
+      # Outbound account verification and password-reset email. These values
+      # remain in .env.production on the VM and are never exposed to browsers.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      PUBLIC_WEBSITE_URL: ${PUBLIC_WEBSITE_URL:-}
       RECORDINGS_DIR: /data/recordings
     volumes:
       - recordings:/data/recordings
