@@ -69,6 +69,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
       SFU_URL: https://${DOMAIN}/sfu
+      PUBLIC_PLATFORM_URL: https://${DOMAIN}
       RTMP_INGEST_URL: rtmp://127.0.0.1/live
       HLS_PUBLIC_URL: https://${DOMAIN}/hls
       TURN_URL: turn:${DOMAIN}:3478
@@ -146,6 +147,7 @@ services:
       - "443:443"
     environment:
       DOMAIN: ${DOMAIN}
+      LEGACY_DOMAIN: ${LEGACY_DOMAIN:-}
       TLS_EMAIL: ${TLS_EMAIL}
     # media-sfu binds the host network for its UDP range, so Caddy reaches it
     # through the host gateway rather than a compose service name.

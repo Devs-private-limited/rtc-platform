@@ -6,14 +6,16 @@
 # ws:// connection from an https:// page, and blocks getUserMedia outright
 # without TLS.
 #
-# DOMAIN and TLS_EMAIL come from .env.production. Caddy provisions and renews
+# DOMAIN and TLS_EMAIL come from .env.production. LEGACY_DOMAIN is optional: set
+# it to a previous hostname (e.g. rtcplatform.duckdns.org) so released apps that
+# still use it keep working after DOMAIN moves. Caddy provisions and renews
 # the Let's Encrypt certificate on its own.
 
 {
 	email {$TLS_EMAIL}
 }
 
-{$DOMAIN} {
+{$DOMAIN} {$LEGACY_DOMAIN} {
 	encode zstd gzip
 
 	# Signaling REST API
