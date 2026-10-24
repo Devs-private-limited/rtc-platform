@@ -22,7 +22,7 @@ Pass these variables explicitly through your deployment configuration and mount 
 
 ## Support and incidents
 
-The website provides live readiness checks and the existing support email. It does not yet provide historical uptime monitoring, paging, or an SLA. Connect an external uptime monitor to `/ready` and `/sfu/ready`; route alerts to an operator before public launch. Do not treat an API readiness response as proof that media traverses real networks.
+The website provides live readiness checks and the existing support email. It does not yet provide historical uptime monitoring, paging, or an SLA. An uptime monitor (Cloudflare Worker, see [infra/uptime-monitor](../infra/uptime-monitor/README.md)) checks `/ready` and `/sfu/ready` every 5 minutes and emails the operator on down/recovery. Do not treat an API readiness response as proof that media traverses real networks.
 
 For reports collect App ID, call ID, UTC timestamp, SDK/app version, device/OS, and network type. Never request passwords, App Secrets, provider keys, or bearer tokens. Use portal diagnostics and server logs to correlate failures. Maintain a written rollback procedure and incident log.
 

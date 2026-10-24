@@ -1,0 +1,21 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "rtcexpress-uptime-monitor",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  // No HTTP endpoint: the worker only runs on its cron.
+  "workers_dev": false,
+  "preview_urls": false,
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "vars": {
+    "ALERT_FROM": "monitor@devsquarelabs.com",
+    "ALERT_TO": "devsquare67@gmail.com"
+  },
+  "send_email": [
+    { "name": "ALERT_EMAIL", "destination_address": "devsquare67@gmail.com" }
+  ],
+  "kv_namespaces": [
+    { "binding": "STATE", "id": "d966f9f95aaa42089477ae129aa3213d" }
+  ],
+  "observability": { "enabled": true }
+}
