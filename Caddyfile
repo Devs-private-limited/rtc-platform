@@ -58,6 +58,7 @@
 	}
 
 	# Public demo is separate from platform administration.
+	redir /demo /demo/ 308
 	handle /demo/* {
 		uri strip_prefix /demo
 		root * /srv/demo
