@@ -1,15 +1,13 @@
 Pod::Spec.new do |s|
   s.name             = 'rtcexpress'
   s.version          = '0.1.0'
-  s.summary          = 'Flutter plugin for RTC Platform'
-  s.homepage         = 'https://github.com/Devs-private-limited/rtc-platform'
+  s.summary          = 'RTCExpress voice, video and chat SDK for Flutter'
+  s.homepage         = 'https://rtc.devsquarelabs.com'
   s.license          = { :type => 'MIT' }
-  s.author           = { 'RTC Platform' => 'dev@rtc.local' }
+  s.author           = { 'Devsquare Labs' => 'support@devsquarelabs.com' }
   s.source           = { :path => '.' }
-  s.source_files     = [
-    'Classes/**/*',
-    '../../mobile-ios/Sources/RTCExpress/**/*.swift'
-  ]
+  # Classes/RTCExpress is synced from packages/mobile-ios by scripts/sync-flutter-native.mjs
+  s.source_files     = 'Classes/**/*'
   s.dependency 'Flutter'
   s.dependency 'Mediasoup-Client-Swift', '0.13.2'
   s.platform = :ios, '15.0'

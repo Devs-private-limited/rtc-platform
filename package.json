@@ -13,6 +13,7 @@
     "dev:sfu": "npm run dev -w @rtc/media-sfu",
     "build": "npm run build -w @rtc/protocol && npm run build -w rtcexpress && npm run build -w @rtc/signaling && npm run build -w @rtc/media-sfu",
     "build:sdk": "npm run build -w @rtc/protocol && npm run build -w rtcexpress",
+    "sync:flutter": "node scripts/sync-flutter-native.mjs",
     "pack:sdk": "npm run build -w @rtc/protocol && npm pack -w rtcexpress",
     "test": "npm run test -w @rtc/signaling"
   },

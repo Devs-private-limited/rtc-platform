@@ -1,6 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:rtcexpress/rtcexpress.dart';
 
+// Create a short-lived user token in the RTCExpress console (Token tools), then:
+//   flutter run --dart-define=RTC_APP_ID=... --dart-define=RTC_USER_ID=alice \
+//     --dart-define=RTC_ROOM_ID=demo-room --dart-define=RTC_TOKEN=...
+// In a real app, fetch the token from your own backend. Never ship an App Secret.
+const serverUrl = 'https://api.devsquarelabs.com';
+const appId = String.fromEnvironment('RTC_APP_ID');
+const userId = String.fromEnvironment('RTC_USER_ID', defaultValue: 'alice');
+const roomId = String.fromEnvironment('RTC_ROOM_ID', defaultValue: 'demo-room');
+const token = String.fromEnvironment('RTC_TOKEN');
+
 void main() => runApp(const MyApp());
 
 class MyApp extends StatefulWidget {
@@ -12,7 +22,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final rtc = RTCExpress();
-  String status = 'idle';
+  String status = appId.isEmpty || token.isEmpty ? 'Pass RTC_APP_ID and RTC_TOKEN with --dart-define' : 'idle';
 
   @override
   void initState() {
@@ -20,21 +30,23 @@ class _MyAppState extends State<MyApp> {
     rtc.on('connected', (p) => setState(() => status = 'connected ${p['userId']}'));
     rtc.on('roomJoined', (p) => setState(() => status = 'room ${p['roomId']}'));
     rtc.on('callInvite', (p) => setState(() => status = 'call from ${p['fromUserId']}'));
+    rtc.on('error', (p) => setState(() => status = 'error: ${p['message']}'));
   }
 
   Future<void> connect() async {
-    const serverUrl = 'https://rtcplatform.duckdns.org';
-    final tokenRes = await RTCExpress.fetchToken(
-      serverUrl,
-      const TokenRequest(appId: 'demo', appSecret: 'demo-secret', userId: 'flutter-user'),
-    );
-    await rtc.init(RTCInitOptions(
+    await rtc.init(const RTCInitOptions(
       serverUrl: serverUrl,
-      appId: 'demo',
-      userId: 'flutter-user',
-      token: tokenRes['token'] as String,
+      appId: appId,
+      userId: userId,
+      token: token,
     ));
-    await rtc.joinRoom('flutter-demo');
+    await rtc.joinRoom(roomId);
+  }
+
+  @override
+  void dispose() {
+    rtc.destroy();
+    super.dispose();
   }
 
   @override
@@ -48,7 +60,10 @@ class _MyAppState extends State<MyApp> {
             children: [
               Text(status),
               const SizedBox(height: 16),
-              ElevatedButton(onPressed: connect, child: const Text('Connect')),
+              ElevatedButton(
+                onPressed: appId.isEmpty || token.isEmpty ? null : connect,
+                child: const Text('Connect'),
+              ),
             ],
           ),
         ),
