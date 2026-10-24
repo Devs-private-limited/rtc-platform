@@ -45,9 +45,11 @@ Recreate everything that reads `DOMAIN` (Caddy, coturn realm, signaling SFU/TURN
 media-sfu's signaling URL), then rebuild the demo assets:
 
 ```sh
-sudo docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
-sudo docker compose -f docker-compose.prod.yml --env-file .env.production run --rm web-build
+sudo docker compose -f docker-compose.prod.yml --env-file .env.production up -d
 ```
+
+Only configuration changed, so no image rebuild is needed. `up -d` recreates just the
+containers whose settings changed. The demo uses relative URLs, so it needs no rebuild either.
 
 ## 3. Verify
 
