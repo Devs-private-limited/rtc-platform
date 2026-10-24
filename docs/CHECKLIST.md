@@ -62,7 +62,7 @@ Pin this file in Cursor. **Billing, payments, VM deploy, and commercial plans ar
 | 18 | **Mobile: screen share** | `[ ]` | Web only |
 | 19 | **Mobile: call recording** | `[x]` | Local mic recording (Android + iOS) |
 | 20 | **Mobile: chat history API** | `[x]` | `getMessageHistory()` on Android + iOS |
-| 21 | **React Native SDK** | `[x]` | `@rtc/react-native-sdk` wraps native Android/iOS |
+| 21 | **React Native SDK** | `[x]` | `rtcexpress-react-native` wraps native Android/iOS |
 | 22 | **Flutter SDK** | `[x]` | `rtcexpress` plugin wraps native Android/iOS |
 | 23 | **Device / audio route selection** (speaker, BT) | `[ ]` | Browser/OS defaults only |
 | 24 | **Active speaker detection** | `[ ]` | Auto layout in group calls |
@@ -144,7 +144,7 @@ Phase D — Scale & more platforms      ✅ DONE (#15, #21, #22)
 | # | Item | Status | Notes |
 |---|------|--------|-------|
 | 15 | **RTMP / HLS** | `[x]` | `rtmp-ingest` service; `POST /v1/rooms/:id/cdn-stream/start\|stop`; HLS at `/hls/{key}/index.m3u8` |
-| 21 | **React Native SDK** | `[x]` | `packages/mobile-react-native` — `@rtc/react-native-sdk` |
+| 21 | **React Native SDK** | `[x]` | `packages/mobile-react-native` — `rtcexpress-react-native` |
 | 22 | **Flutter SDK** | `[x]` | `packages/mobile-flutter` — `rtcexpress` plugin + example app |
 
 ---

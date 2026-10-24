@@ -21,5 +21,8 @@ android {
 
 dependencies {
     implementation "com.facebook.react:react-android:+"
-    implementation project(":rtcexpress-sdk")
+    // Native SDK sources are synced into src/main/java/com/rtcexpress/sdk by
+    // scripts/sync-native-sdks.mjs; these are its dependencies.
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
+    implementation "io.github.haiyangwu:mediasoup-client:3.4.0"
 }

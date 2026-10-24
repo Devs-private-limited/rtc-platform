@@ -6,7 +6,7 @@ Pod::Spec.new do |s|
   s.license          = { :type => 'MIT' }
   s.author           = { 'Devsquare Labs' => 'support@devsquarelabs.com' }
   s.source           = { :path => '.' }
-  # Classes/RTCExpress is synced from packages/mobile-ios by scripts/sync-flutter-native.mjs
+  # Classes/RTCExpress is synced from packages/mobile-ios by scripts/sync-native-sdks.mjs
   s.source_files     = 'Classes/**/*'
   s.dependency 'Flutter'
   s.dependency 'Mediasoup-Client-Swift', '0.13.2'

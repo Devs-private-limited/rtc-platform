@@ -37,7 +37,7 @@ The signaling worker polls every 2 seconds. Jobs use database leases and SKIP LO
 ## React Native helper
 
 ```ts
-import { RTCPushClient } from '@rtc/react-native-sdk';
+import { RTCPushClient } from 'rtcexpress-react-native';
 const push = new RTCPushClient(serverUrl, () => getFreshRtcUserToken());
 await push.registerDevice({ installationId, platform: 'android', token: fcmToken });
 // After roomJoined:

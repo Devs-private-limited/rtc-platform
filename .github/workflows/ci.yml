@@ -65,5 +65,5 @@ jobs:
           npm pack -w @rtc/protocol --dry-run
           npm pack -w rtcexpress --dry-run
 
-      - name: Check Flutter plugin native sources are in sync
-        run: node scripts/sync-flutter-native.mjs --check
+      - name: Check bundled native SDK sources are in sync
+        run: node scripts/sync-native-sdks.mjs --check

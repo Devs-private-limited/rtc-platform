@@ -1,7 +1,7 @@
 {
-  "name": "@rtc/react-native-sdk",
+  "name": "rtcexpress-react-native",
   "version": "0.1.0",
-  "description": "React Native SDK for RTC Platform — wraps native Android/iOS libraries",
+  "description": "RTCExpress React Native SDK: voice calls, video calls and in-app chat. Android supported, iOS experimental.",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "react-native": "src/index.ts",
@@ -9,12 +9,12 @@
     "src",
     "lib",
     "android/build.gradle",
-    "android/settings.gradle",
     "android/src",
-    "ios/RTCExpressBridge.m",
-    "ios/RTCExpressModule.swift",
+    "ios",
     "react-native.config.js",
-    "RTCExpress.podspec"
+    "RTCExpress.podspec",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -30,6 +30,29 @@
     "react-native": "^0.76.0",
     "typescript": "^5.7.3"
   },
-  "keywords": ["webrtc", "rtc", "react-native", "video-call"],
-  "license": "MIT"
+  "license": "MIT",
+  "author": "Devsquare Labs <support@devsquarelabs.com>",
+  "homepage": "https://rtc.devsquarelabs.com",
+  "bugs": {
+    "url": "https://github.com/Devs-private-limited/rtcexpress-guides/issues",
+    "email": "support@devsquarelabs.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Devs-private-limited/rtcexpress-guides.git"
+  },
+  "keywords": [
+    "rtcexpress",
+    "react-native",
+    "webrtc",
+    "voice-call",
+    "video-call",
+    "chat",
+    "sdk",
+    "android",
+    "ios"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

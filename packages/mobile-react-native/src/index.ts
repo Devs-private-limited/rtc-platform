@@ -1,8 +1,8 @@
-import { DeviceEventEmitter, Platform, NativeModules, NativeEventEmitter, type EmitterSubscription } from "react-native";
+import { DeviceEventEmitter, Platform, NativeModules, NativeEventEmitter, requireNativeComponent, type EmitterSubscription, type HostComponent, type ViewProps } from "react-native";
 export { RTCPushClient, type PushDeviceRegistration } from './push';
 
 const LINKING_ERROR =
-  "The package '@rtc/react-native-sdk' doesn't seem to be linked. Run pod install (iOS) and rebuild.";
+  "The package 'rtcexpress-react-native' doesn't seem to be linked. Run pod install (iOS) and rebuild.";
 
 const Native = NativeModules.RTCExpress
   ? NativeModules.RTCExpress
@@ -18,6 +18,19 @@ const Native = NativeModules.RTCExpress
 const emitter = Platform.OS === "android" ? DeviceEventEmitter : new NativeEventEmitter(Native);
 
 export type MediaMode = "p2p" | "sfu" | "auto";
+
+export type RTCVideoViewProps = ViewProps & {
+  /** true renders the local camera preview; false (default) the remote video. */
+  local?: boolean;
+};
+
+/** Native video renderer for the active call. Android only for now. */
+export const RTCVideoView: HostComponent<RTCVideoViewProps> =
+  Platform.OS === "android"
+    ? requireNativeComponent<RTCVideoViewProps>("RTCVideoView")
+    : ((() => {
+        throw new Error("RTCVideoView currently supports Android only");
+      }) as unknown as HostComponent<RTCVideoViewProps>);
 
 export interface RTCInitOptions {
   serverUrl: string;
@@ -48,6 +61,7 @@ export type RTCEventName =
   | "callInvite"
   | "callState"
   | "remoteVideo"
+  | "diagnostics"
   | "error";
 
 export class RTCExpress {

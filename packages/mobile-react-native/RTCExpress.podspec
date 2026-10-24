@@ -5,17 +5,15 @@ package = JSON.parse(File.read(File.join(__dir__, "package.json")))
 Pod::Spec.new do |s|
   s.name         = "RTCExpress"
   s.version      = package["version"]
-  s.summary      = "React Native bridge for RTC Platform"
-  s.homepage     = "https://github.com/Devs-private-limited/rtc-platform"
+  s.summary      = "RTCExpress voice, video and chat SDK for React Native"
+  s.homepage     = "https://rtc.devsquarelabs.com"
   s.license      = "MIT"
-  s.authors      = { "RTC Platform" => "dev@rtc.local" }
+  s.authors      = { "Devsquare Labs" => "support@devsquarelabs.com" }
   s.platforms    = { :ios => "15.0" }
   s.source       = { :path => "." }
 
-  s.source_files = [
-    "ios/**/*.{h,m,mm,swift}",
-    "../../mobile-ios/Sources/RTCExpress/**/*.swift"
-  ]
+  # ios/RTCExpress is synced from packages/mobile-ios by scripts/sync-native-sdks.mjs
+  s.source_files = "ios/**/*.{h,m,mm,swift}"
 
   s.dependency "React-Core"
   s.dependency "Mediasoup-Client-Swift", "0.13.2"
