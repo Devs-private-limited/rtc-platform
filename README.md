@@ -9,7 +9,7 @@ rtc-platform/
 ├── packages/
 │   ├── protocol/     # Shared message types
 │   ├── signaling/    # WebSocket + REST + app registry
-│   ├── sdk/          # @rtc/sdk — embed in any app (npm-ready)
+│   ├── sdk/          # rtcexpress (npm) — embed in any app
 │   ├── mobile-android/  # Android SDK (Kotlin)
 │   ├── mobile-ios/      # iOS SDK (Swift)
 │   ├── media-sfu/    # mediasoup SFU service
@@ -221,7 +221,7 @@ The SDK routes voice through **mediasoup** when `SFU_URL` is configured and `med
 ### SDK — 1:1 call + group voice
 
 ```ts
-import { RTCExpress } from "@rtc/sdk";
+import { RTCExpress } from "rtcexpress";
 
 const rtc = new RTCExpress();
 await rtc.init({
@@ -286,9 +286,8 @@ Both services handle `SIGTERM` / `SIGINT` — drain WebSockets, close Redis/DB, 
 ```bash
 npm run build:sdk
 npm run pack:sdk    # verify tarballs locally
-# Publish @rtc/protocol first, then @rtc/sdk
-npm publish -w @rtc/protocol
-npm publish -w @rtc/sdk
+# Published as `rtcexpress`; @rtc/protocol types are bundled in, so only one package is published
+npm publish -w rtcexpress
 ```
 
 ## Events + webhooks
@@ -437,7 +436,7 @@ deactivate the app rather than removing the variable.
 ## Architecture
 
 ```
-Customer App → @rtc/sdk
+Customer App → rtcexpress
                  ├─ WebSocket → Signaling (chat + call setup + sfu_producer)
                  ├─ WebRTC P2P → Voice (mediaMode: p2p)
                  └─ mediasoup SFU → 1:1 + group voice (mediaMode: sfu)

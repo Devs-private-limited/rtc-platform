@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@rtc/sdk": "*"
+    "rtcexpress": "*"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

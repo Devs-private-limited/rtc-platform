@@ -11,9 +11,9 @@
     "dev:signaling": "npm run dev -w @rtc/signaling",
     "dev:demo": "npm run dev -w @rtc/demo",
     "dev:sfu": "npm run dev -w @rtc/media-sfu",
-    "build": "npm run build -w @rtc/protocol && npm run build -w @rtc/sdk && npm run build -w @rtc/signaling && npm run build -w @rtc/media-sfu",
-    "build:sdk": "npm run build -w @rtc/protocol && npm run build -w @rtc/sdk",
-    "pack:sdk": "npm pack -w @rtc/protocol && npm pack -w @rtc/sdk",
+    "build": "npm run build -w @rtc/protocol && npm run build -w rtcexpress && npm run build -w @rtc/signaling && npm run build -w @rtc/media-sfu",
+    "build:sdk": "npm run build -w @rtc/protocol && npm run build -w rtcexpress",
+    "pack:sdk": "npm run build -w @rtc/protocol && npm pack -w rtcexpress",
     "test": "npm run test -w @rtc/signaling"
   },
   "devDependencies": {

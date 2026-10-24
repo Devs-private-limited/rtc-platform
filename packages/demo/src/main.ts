@@ -1,5 +1,5 @@
 import "./style.css";
-import { RTCExpress } from "@rtc/sdk";
+import { RTCExpress } from "rtcexpress";
 
 const SERVER_URL = window.location.origin;
 let APP_ID = "";

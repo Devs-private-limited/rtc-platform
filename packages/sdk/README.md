@@ -1,14 +1,21 @@
-# @rtc/sdk
+# RTCExpress Web SDK
 
-Embeddable SDK for real-time **1:1 chat**, **voice calls**, and **group voice** (mediasoup SFU).
+Add **voice calls, video calls and in-app chat** to any web app. RTCExpress handles signaling, TURN relay and group media (SFU) for you, with a simple flat monthly price.
+
+- 1:1 voice and video (peer-to-peer, or through the SFU)
+- Group voice and video rooms
+- Text chat with history, presence, screen sharing, recording
+- Auto-reconnect, roles and moderator controls, call quality metrics
+
+**Website:** https://rtc.devsquarelabs.com · **Docs:** https://rtc.devsquarelabs.com/docs · **Live demo:** https://api.devsquarelabs.com/demo/
 
 ## Install
 
 ```bash
-npm install @rtc/sdk
+npm install rtcexpress
 ```
 
-For local monorepo development, link from `packages/sdk` after `npm run build`.
+You need an App ID and App Secret. Create a free account at https://rtc.devsquarelabs.com to get them.
 
 ## Quick integration
 
@@ -16,7 +23,7 @@ For local monorepo development, link from `packages/sdk` after `npm run build`.
 import { RTCExpress } from "@rtc/sdk";
 
 // 1. Your backend requests a token from the RTC signaling server
-const { token } = await RTCExpress.fetchToken("https://signal.yourdomain.com", {
+const { token } = await RTCExpress.fetchToken("https://api.devsquarelabs.com", {
   appId: "your-app-id",
   appSecret: "your-app-secret", // server-side only
   userId: "user_123",
@@ -25,7 +32,7 @@ const { token } = await RTCExpress.fetchToken("https://signal.yourdomain.com", {
 // 2. Initialize SDK in your frontend
 const rtc = new RTCExpress();
 await rtc.init({
-  serverUrl: "https://signal.yourdomain.com",
+  serverUrl: "https://api.devsquarelabs.com",
   appId: "your-app-id",
   userId: "user_123",
   token,
@@ -61,7 +68,7 @@ rtc.getMediaMode(); // "p2p" | "sfu"
 Never expose `appSecret` in client code. Your server calls:
 
 ```http
-POST /v1/token
+POST https://api.devsquarelabs.com/v1/token
 Content-Type: application/json
 
 {
@@ -73,18 +80,6 @@ Content-Type: application/json
 ```
 
 Returns `{ "token": "...", "expiresIn": 3600 }`.
-
-## Register a new app (admin)
-
-```http
-POST /v1/admin/apps
-x-admin-key: your-admin-key
-Content-Type: application/json
-
-{ "name": "My Mobile App" }
-```
-
-Response includes `appId` and `appSecret` (shown once).
 
 ## Events
 
@@ -109,3 +104,11 @@ On `init()`, the SDK loads `GET /v1/config` for ICE/TURN servers, SFU URL, and f
 
 - HTTPS (or localhost) for `getUserMedia`
 - Modern browsers with WebRTC support
+
+## Support
+
+Email support@devsquarelabs.com. Integration guides: https://github.com/Devs-private-limited/rtcexpress-guides
+
+## License
+
+MIT © Devsquare Labs

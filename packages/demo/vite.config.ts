@@ -5,7 +5,7 @@ export default defineConfig({
   base: "/demo/",
   resolve: {
     alias: {
-      "@rtc/sdk": path.resolve(__dirname, "../sdk/src/index.ts"),
+      "rtcexpress": path.resolve(__dirname, "../sdk/src/index.ts"),
     },
   },
   server: {

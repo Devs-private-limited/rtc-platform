@@ -35,7 +35,7 @@ Never expose `appSecret` in frontend code.
 ## Step 3 — Integrate the SDK
 
 ```ts
-import { RTCExpress } from "@rtc/sdk";
+import { RTCExpress } from "rtcexpress";
 
 const rtc = new RTCExpress();
 await rtc.init({
@@ -70,8 +70,7 @@ In the dashboard → your project → **Webhooks**:
 
 ```bash
 npm run build:sdk
-npm publish -w @rtc/protocol
-npm publish -w @rtc/sdk
+npm publish -w rtcexpress   # @rtc/protocol types are bundled in; it is not published
 ```
 
 ## Production deploy

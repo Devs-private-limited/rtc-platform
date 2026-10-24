@@ -1,7 +1,7 @@
 {
-  "name": "@rtc/sdk",
+  "name": "rtcexpress",
   "version": "0.1.0",
-  "description": "Embeddable WebRTC SDK for 1:1 chat and voice calls",
+  "description": "RTCExpress Web SDK: add voice calls, video calls and in-app chat to any web app (WebRTC, P2P + SFU).",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -13,24 +13,50 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "prepublishOnly": "npm run build"
   },
   "license": "MIT",
+  "author": "Devsquare Labs <support@devsquarelabs.com>",
+  "homepage": "https://rtc.devsquarelabs.com",
+  "bugs": {
+    "url": "https://github.com/Devs-private-limited/rtcexpress-guides/issues",
+    "email": "support@devsquarelabs.com"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Ajay-Devarasetty/rtc-platform.git",
-    "directory": "packages/sdk"
+    "url": "git+https://github.com/Devs-private-limited/rtcexpress-guides.git"
   },
-  "keywords": ["webrtc", "rtc", "voice", "chat", "sdk"],
+  "keywords": [
+    "rtcexpress",
+    "webrtc",
+    "rtc",
+    "voice-call",
+    "video-call",
+    "chat",
+    "in-app-chat",
+    "sdk",
+    "sfu",
+    "mediasoup",
+    "agora-alternative",
+    "zegocloud-alternative"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
-    "@rtc/protocol": "0.1.0",
     "mediasoup-client": "^3.7.16"
   },
   "devDependencies": {
+    "@rtc/protocol": "0.1.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.3"
   },

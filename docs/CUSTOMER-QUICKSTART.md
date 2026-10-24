@@ -10,20 +10,16 @@ Use separate project credentials and separate deployments for staging and produc
 
 Use [the server example](../examples/customer-token-server.mjs). Authenticate your user and authorize their room before calling it. Supply `RTC_SERVER_URL`, `RTC_APP_ID`, and `RTC_APP_SECRET` through your server's secret configuration. Return only the RTC token and expiry to the client. Never trust a user ID or room permission merely because a browser submitted it.
 
-## Install the development SDK
-
-Until a tested release is published, build and pack from this repository:
+## Install the SDK
 
 ```sh
-npm run build:sdk
-npm pack -w @rtc/protocol
-npm pack -w @rtc/sdk
+npm install rtcexpress
 ```
 
-Install both generated tarballs in your web app. See [release gates](RELEASES.md) for native SDK status and supported-platform validation.
+The package is published on npm as [`rtcexpress`](https://www.npmjs.com/package/rtcexpress). See [release gates](RELEASES.md) for native SDK status and supported-platform validation.
 
 ```js
-import { RTCExpress } from '@rtc/sdk';
+import { RTCExpress } from 'rtcexpress';
 const rtc = new RTCExpress();
 rtc.on('connected', () => rtc.joinRoom(roomId));
 rtc.on('roomJoined', () => { /* Enable your chat and call buttons. */ });

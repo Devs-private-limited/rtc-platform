@@ -1,6 +1,7 @@
-type EventMap = Record<string, unknown[]>;
+// Mapped-type constraint so interfaces (like RTCEvents) qualify without an index signature.
+type EventMap<Events> = { [K in keyof Events]: unknown[] };
 
-export class EventEmitter<Events extends EventMap = EventMap> {
+export class EventEmitter<Events extends EventMap<Events> = Record<string, unknown[]>> {
   private listeners = new Map<keyof Events, Set<(...args: unknown[]) => void>>();
 
   on<K extends keyof Events>(event: K, handler: (...args: Events[K]) => void) {

@@ -500,7 +500,7 @@ const res = await fetch("${window.location.origin}/v1/token", {
 const { token } = await res.json();
 
 // 2. Client-side
-import { RTCExpress } from "@rtc/sdk";
+import { RTCExpress } from "rtcexpress";
 
 const rtc = new RTCExpress();
 await rtc.init({

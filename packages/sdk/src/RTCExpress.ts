@@ -38,7 +38,7 @@ function randomId() {
   return crypto.randomUUID();
 }
 
-export class RTCExpress extends EventEmitter {
+export class RTCExpress extends EventEmitter<RTCEvents> {
   private serverUrl = "";
   private appId = "";
   private userId = "";

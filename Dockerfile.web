@@ -19,7 +19,7 @@ COPY packages/demo packages/demo
 COPY packages/dashboard packages/dashboard
 
 RUN npm run build -w @rtc/protocol
-# The demo aliases @rtc/sdk to source, so it needs no prebuilt SDK bundle.
+# The demo aliases rtcexpress to source, so it needs no prebuilt SDK bundle.
 RUN npm run build -w @rtc/demo
 RUN npm run build -w @rtc/dashboard
 

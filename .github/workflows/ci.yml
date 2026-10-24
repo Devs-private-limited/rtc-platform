@@ -38,7 +38,7 @@ jobs:
         run: npm run build -w @rtc/protocol
 
       - name: Build SDK
-        run: npm run build -w @rtc/sdk
+        run: npm run build -w rtcexpress
 
       - name: Build signaling
         run: npm run build -w @rtc/signaling
@@ -63,4 +63,4 @@ jobs:
       - name: Verify npm packages
         run: |
           npm pack -w @rtc/protocol --dry-run
-          npm pack -w @rtc/sdk --dry-run
+          npm pack -w rtcexpress --dry-run
