@@ -83,6 +83,10 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-}
       PUBLIC_WEBSITE_URL: ${PUBLIC_WEBSITE_URL:-}
       ENQUIRY_ALERT_TO: ${ENQUIRY_ALERT_TO:-}
+      # Dodo Payments subscriptions (DODO_ENV is "test" or "live").
+      DODO_ENV: ${DODO_ENV:-test}
+      DODO_API_KEY: ${DODO_API_KEY:-}
+      DODO_WEBHOOK_SECRET: ${DODO_WEBHOOK_SECRET:-}
       RECORDINGS_DIR: /data/recordings
     volumes:
       - recordings:/data/recordings

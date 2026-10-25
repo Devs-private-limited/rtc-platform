@@ -6,6 +6,7 @@ import { verifyAppCredentials } from "../apps.js";
 import { getBillingSummary } from "../billing.js";
 import { getCustomerByAppId } from "../customers.js";
 import { getPool } from "../db.js";
+import { getAppBilling, isDodoEnabled } from "../dodo.js";
 import { saveLead } from "../leads.js";
 import { rateLimit } from "../rate-limit.js";
 import { requirePortalUser, portalVersion } from "../portal-auth.js";
@@ -58,10 +59,11 @@ export async function registerPortalRoutes(app: FastifyInstance, jwtSecret: stri
     if (!claims) return;
 
     try {
-      const [billing, name, customer] = await Promise.all([
+      const [billing, name, customer, subscription] = await Promise.all([
         getBillingSummary(claims.appId, req.query.period === "all" ? {} : currentMonth()),
         getAppName(claims.appId),
         getCustomerByAppId(claims.appId),
+        getAppBilling(claims.appId),
       ]);
       return {
         appId: claims.appId,
@@ -69,6 +71,14 @@ export async function registerPortalRoutes(app: FastifyInstance, jwtSecret: stri
         email: customer?.email ?? null,
         billing,
         plans: BILLING_PLANS,
+        subscription: {
+          checkoutEnabled: isDodoEnabled(),
+          period: subscription?.billingPeriod ?? null,
+          status: subscription?.status ?? null,
+          renewsAt: subscription?.renewsAt ?? null,
+          cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
+          canManage: Boolean(subscription?.customerId),
+        },
         integration: {
           serverUrl: process.env.PUBLIC_PLATFORM_URL || `https://${process.env.DOMAIN || "rtcplatform.duckdns.org"}`,
           tokenEndpoint: "POST /v1/token",
