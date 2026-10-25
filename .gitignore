@@ -25,3 +25,4 @@ apps/rn-test-app/
 packages/mobile-android/build/
 packages/mobile-flutter/example/.dart_tool/
 packages/mobile-flutter/example/pubspec.lock
+packages/mobile-android/local.properties
