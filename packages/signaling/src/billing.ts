@@ -59,6 +59,8 @@ async function getUsageBreakdown(
   const qualityReports = await countQualityReportsForApp(appId, opts);
 
   return {
+    voiceMinutes: metering.voiceMinutes,
+    videoMinutes: metering.videoMinutes,
     callMinutes: metering.callMinutes,
     messagesSent: metering.messagesSent,
     recordings,
@@ -101,6 +103,5 @@ export async function maybeDispatchBillingAlert(
     alerts,
     usage: summary.usage,
     limits: summary.limits,
-    estimatedCostUsd: summary.estimatedCostUsd,
   });
 }

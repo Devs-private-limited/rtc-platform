@@ -102,6 +102,8 @@ export interface BillingSummary {
   planDescription?: string;
   features?: Record<string, boolean>;
   usage: {
+    voiceMinutes: number;
+    videoMinutes: number;
     callMinutes: number;
     messagesSent: number;
     recordings: number;
@@ -110,8 +112,6 @@ export interface BillingSummary {
   };
   limits: Record<string, number>;
   limitStatus: Record<string, { used: number; limit: number; percent: number; exceeded: boolean }>;
-  estimatedCostUsd: number;
-  overageCostUsd: number;
 }
 
 export const api = {

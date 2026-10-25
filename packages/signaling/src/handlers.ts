@@ -286,7 +286,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
         if (findUserCall(claims.appId, userId) !== call || call.ringingExpiresAt <= Date.now()) return;
         markCallConnected(claims.appId, payload.callId);
         try {
-          await startCallSession(claims.appId, call.callId, call.roomId, call.callerUserId, call.calleeUserId);
+          await startCallSession(claims.appId, call.callId, call.roomId, call.callerUserId, call.calleeUserId, callType);
         } catch (error) {
           call.phase = "ringing";
           throw error;

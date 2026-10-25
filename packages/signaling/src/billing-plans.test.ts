@@ -1,32 +1,48 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computeBillingSummary, isBillingPlan, type UsageBreakdown } from "./billing-plans.js";
+import { BILLING_PLANS, checkThresholdAlerts, computeBillingSummary, isBillingPlan, type UsageBreakdown } from "./billing-plans.js";
 
 const usage: UsageBreakdown = {
-  callMinutes: 0, messagesSent: 0, recordings: 0, transcriptionMinutes: 0,
-  qualityReports: 0, callsConnected: 0, callsEnded: 0, totalEvents: 0,
+  voiceMinutes: 0, videoMinutes: 0, callMinutes: 0, messagesSent: 0, recordings: 0,
+  transcriptionMinutes: 0, qualityReports: 0, callsConnected: 0, callsEnded: 0, totalEvents: 0,
 };
 
-test("usage above a threshold is charged once in the estimate", () => {
-  const summary = computeBillingSummary("test", "starter", { ...usage, callMinutes: 1500 });
-  assert.equal(summary.estimatedCostUsd, 6);
-  assert.equal(summary.overageCostUsd, 2);
-  assert.equal(summary.limitStatus.callMinutes.exceeded, true);
+test("plans match the published prices and allowances", () => {
+  assert.deepEqual(BILLING_PLANS.free.price, { monthlyUsd: 0, yearlyUsd: 0 });
+  assert.deepEqual(BILLING_PLANS.starter.price, { monthlyUsd: 9, yearlyUsd: 90 });
+  assert.deepEqual(BILLING_PLANS.pro.price, { monthlyUsd: 29, yearlyUsd: 290 });
+  assert.equal(BILLING_PLANS.free.limits.voiceMinutes, 2000);
+  assert.equal(BILLING_PLANS.starter.limits.voiceMinutes, 30000);
+  assert.equal(BILLING_PLANS.pro.limits.voiceMinutes, 50000);
+  assert.equal(BILLING_PLANS.pro.limits.videoMinutes, 10000);
+  for (const plan of Object.values(BILLING_PLANS)) {
+    assert.equal(plan.limits.callMinutes, plan.limits.voiceMinutes + plan.limits.videoMinutes);
+  }
 });
 
-test("all billable metrics count once and exact thresholds have no overage", () => {
-  const summary = computeBillingSummary("test", "starter", {
-    ...usage, callMinutes: 1000, messagesSent: 10000, recordings: 100, transcriptionMinutes: 300,
-  });
-  assert.equal(summary.estimatedCostUsd, 16);
-  assert.equal(summary.overageCostUsd, 0);
-  assert.equal(summary.limitStatus.callMinutes.exceeded, false);
+test("free plan includes 1:1 voice but not group calls or video", () => {
+  const { features } = BILLING_PLANS.free;
+  assert.equal(features.voice, true);
+  assert.equal(features.groupVoice, false);
+  assert.equal(features.video, false);
 });
 
-test("free plan usage does not acquire charges", () => {
-  const summary = computeBillingSummary("test", "free", { ...usage, messagesSent: 2000 });
-  assert.equal(summary.estimatedCostUsd, 0);
-  assert.equal(summary.overageCostUsd, 0);
+test("voice and video allowances are tracked separately", () => {
+  const summary = computeBillingSummary("test", "pro", { ...usage, voiceMinutes: 40000, videoMinutes: 11000, callMinutes: 51000 });
+  assert.equal(summary.limitStatus.voiceMinutes.exceeded, false);
+  assert.equal(summary.limitStatus.videoMinutes.exceeded, true);
+  assert.equal(summary.limitStatus.voiceMinutes.percent, 80);
+});
+
+test("the summary carries no per-minute charges", () => {
+  const summary = computeBillingSummary("test", "starter", { ...usage, voiceMinutes: 45000, callMinutes: 45000 });
+  assert.equal("estimatedCostUsd" in summary, false);
+  assert.equal("overageCostUsd" in summary, false);
+});
+
+test("threshold alerts report voice once, not again as the combined total", () => {
+  const summary = computeBillingSummary("test", "starter", { ...usage, voiceMinutes: 27000, callMinutes: 27000 });
+  assert.deepEqual(checkThresholdAlerts(summary).map((a) => a.metric), ["voiceMinutes"]);
 });
 
 test("only actual plan identifiers are accepted", () => {

@@ -23,8 +23,10 @@ export async function registerMediaAuthorizeRoutes(app: FastifyInstance, deps: {
       return reply.status(403).send({ error: "Publishing is not allowed for this room role" });
     }
     // A downgrade must not prevent the host from stopping an existing job.
+    // Media through the SFU is server-relayed group media, so audio needs
+    // groupVoice: plain 1:1 voice (the Free plan) stays peer-to-peer.
     if (!action.endsWith("-stop")) {
-      const feature = action === "recording-start" ? "recording" : action === "cdn-start" ? "groupVideo" : action === "video" ? "video" : "voice";
+      const feature = action === "recording-start" ? "recording" : action === "cdn-start" ? "groupVideo" : action === "video" ? "video" : "groupVoice";
       const result = await checkAppFeature(claims.appId, feature);
       if (!result.allowed) return reply.status(403).send({ error: result.message });
     }

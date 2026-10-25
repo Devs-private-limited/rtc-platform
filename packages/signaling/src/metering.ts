@@ -13,12 +13,15 @@ export interface CallSession {
   endReason: string | null;
 }
 
+export type CallType = "voice" | "video";
+
 interface MemoryCallSession {
   appId: string;
   callId: string;
   roomId: string;
   callerUserId: string;
   calleeUserId: string;
+  callType: CallType;
   startedAt: string;
   endedAt: string | null;
   durationMs: number | null;
@@ -39,15 +42,16 @@ export async function startCallSession(
   callId: string,
   roomId: string,
   callerUserId: string,
-  calleeUserId: string
+  calleeUserId: string,
+  callType: CallType = "voice"
 ) {
   const db = getPool();
   if (db) {
     await db.query(
-      `INSERT INTO call_sessions (app_id, call_id, room_id, caller_user_id, callee_user_id)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO call_sessions (app_id, call_id, room_id, caller_user_id, callee_user_id, call_type)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (app_id, call_id) DO NOTHING`,
-      [appId, callId, roomId, callerUserId, calleeUserId]
+      [appId, callId, roomId, callerUserId, calleeUserId, callType]
     );
     return;
   }
@@ -59,6 +63,7 @@ export async function startCallSession(
       roomId,
       callerUserId,
       calleeUserId,
+      callType,
       startedAt: new Date().toISOString(),
       endedAt: null,
       durationMs: null,
@@ -172,14 +177,27 @@ export async function listCallSessions(appId: string, limit = 50): Promise<CallS
   }));
 }
 
+/**
+ * Call usage is counted in participant minutes, matching the published plans:
+ * a 10-minute 1:1 call is 20 participant minutes, and each person in a group
+ * room accrues their own time. `callMinutes` is voice plus video.
+ */
 export interface MeteringSummary {
   appId: string;
   period: { from: string | null; to: string | null };
   messagesSent: number;
   callsConnected: number;
   callsEnded: number;
+  voiceMinutes: number;
+  videoMinutes: number;
   callMinutes: number;
   totalEvents: number;
+}
+
+const ONE_TO_ONE_PARTICIPANTS = 2;
+
+function toMinutes(ms: number) {
+  return Math.round((ms / 60_000) * 100) / 100;
 }
 
 export async function getMeteringSummary(
@@ -200,14 +218,20 @@ export async function getMeteringSummary(
       if (opts.to && e.createdAt > opts.to) return false;
       return true;
     });
-    const totalMs = memoryCallSessions.filter(s => s.appId === appId).reduce((sum, s) => sum + durationInPeriod(s.startedAt, s.endedAt, opts), 0);
+    const msFor = (type: CallType) => memoryCallSessions
+      .filter(s => s.appId === appId && s.callType === type)
+      .reduce((sum, s) => sum + durationInPeriod(s.startedAt, s.endedAt, opts), 0) * ONE_TO_ONE_PARTICIPANTS;
+    const voiceMinutes = toMinutes(msFor("voice"));
+    const videoMinutes = toMinutes(msFor("video"));
     return {
       appId,
       period: { from: opts.from ?? null, to: opts.to ?? null },
       messagesSent: events.filter((e) => e.type === "message.sent").length,
       callsConnected: sessions.length,
       callsEnded: sessions.filter((s) => s.endedAt).length,
-      callMinutes: Math.round((totalMs / 60_000) * 100) / 100,
+      voiceMinutes,
+      videoMinutes,
+      callMinutes: toMinutes(msFor("voice") + msFor("video")),
       totalEvents: events.length,
     };
   }
@@ -234,7 +258,8 @@ export async function getMeteringSummary(
     sessionFilter += ` AND started_at <= $${sessionParams.length}`;
   }
 
-  const [messages, callsConnected, callsEnded, callMinutes, totalEvents] = await Promise.all([
+  const periodArgs = [appId, opts.from || "-infinity", opts.to || new Date().toISOString()];
+  const [messages, callsConnected, callsEnded, oneToOne, group, totalEvents] = await Promise.all([
     db.query(
       `SELECT COUNT(*)::int AS count FROM events WHERE ${eventFilter} AND type = 'message.sent'`,
       params
@@ -245,13 +270,25 @@ export async function getMeteringSummary(
       sessionParams
     ),
     db.query(
-      `SELECT COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM
+      `SELECT call_type AS kind, COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM
         (LEAST(COALESCE(ended_at, NOW()), $3::timestamptz) - GREATEST(started_at, $2::timestamptz))) * 1000)), 0)::bigint AS total
-       FROM call_sessions WHERE app_id = $1 AND started_at <= $3::timestamptz AND COALESCE(ended_at, NOW()) >= $2::timestamptz`,
-      [appId, opts.from || "-infinity", opts.to || new Date().toISOString()]
+       FROM call_sessions WHERE app_id = $1 AND started_at <= $3::timestamptz AND COALESCE(ended_at, NOW()) >= $2::timestamptz
+       GROUP BY call_type`,
+      periodArgs
+    ),
+    db.query(
+      `SELECT kind, COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM
+        (LEAST(COALESCE(left_at, NOW()), $3::timestamptz) - GREATEST(joined_at, $2::timestamptz))) * 1000)), 0)::bigint AS total
+       FROM media_sessions WHERE app_id = $1 AND joined_at <= $3::timestamptz AND COALESCE(left_at, NOW()) >= $2::timestamptz
+       GROUP BY kind`,
+      periodArgs
     ),
     db.query(`SELECT COUNT(*)::int AS total FROM events WHERE ${eventFilter}`, params),
   ]);
+
+  const msFor = (kind: CallType) =>
+    Number(oneToOne.rows.find((row) => row.kind === kind)?.total ?? 0) * ONE_TO_ONE_PARTICIPANTS +
+    Number(group.rows.find((row) => row.kind === kind)?.total ?? 0);
 
   return {
     appId,
@@ -259,7 +296,9 @@ export async function getMeteringSummary(
     messagesSent: messages.rows[0]?.count ?? 0,
     callsConnected: callsConnected.rows[0]?.count ?? 0,
     callsEnded: callsEnded.rows[0]?.count ?? 0,
-    callMinutes: Math.round((Number(callMinutes.rows[0]?.total ?? 0) / 60_000) * 100) / 100,
+    voiceMinutes: toMinutes(msFor("voice")),
+    videoMinutes: toMinutes(msFor("video")),
+    callMinutes: toMinutes(msFor("voice") + msFor("video")),
     totalEvents: totalEvents.rows[0]?.total ?? 0,
   };
 }

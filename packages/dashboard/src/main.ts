@@ -241,7 +241,8 @@ async function renderOverview(el: HTMLElement, appId: string) {
 async function renderBilling(el: HTMLElement, appId: string) {
   const billing = await api.getBilling(appId);
   const metrics = [
-    ["Call minutes", "callMinutes"],
+    ["Voice minutes", "voiceMinutes"],
+    ["Video minutes", "videoMinutes"],
     ["Messages", "messages"],
     ["Recordings", "recordings"],
     ["Transcription min", "transcriptionMinutes"],
@@ -262,14 +263,10 @@ async function renderBilling(el: HTMLElement, appId: string) {
     <section class="card">
       <h2>Billing — ${billing.planName} plan</h2>
       <p class="muted" style="margin-bottom:12px">${billing.planDescription || ""}</p>
-      <div class="grid-2" style="margin-bottom:16px">
-        <div class="stat"><div class="label">Estimated cost</div><div class="value">$${billing.estimatedCostUsd}</div></div>
-        <div class="stat"><div class="label">Overage cost</div><div class="value">$${billing.overageCostUsd}</div></div>
-      </div>
       <div class="row" style="margin-bottom:16px">
         <label>Change plan
           <select id="plan-select">
-            <option value="free" ${billing.plan === "free" ? "selected" : ""}>Free — chat only</option>
+            <option value="free" ${billing.plan === "free" ? "selected" : ""}>Free — chat + 1:1 voice</option>
             <option value="starter" ${billing.plan === "starter" ? "selected" : ""}>Starter — chat + voice</option>
             <option value="pro" ${billing.plan === "pro" ? "selected" : ""}>Pro — chat + voice + video</option>
           </select>
