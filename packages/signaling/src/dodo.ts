@@ -154,15 +154,41 @@ export async function createDodoCheckout(input: { appId: string; customerId: str
   return session.checkout_url;
 }
 
-/** Upgrade or downgrade an existing subscription; the webhook then switches the plan. */
-export async function changeDodoPlan(subscriptionId: string, plan: PaidPlan, period: BillingPeriod) {
-  const productId = await productIdFor(plan, period);
-  await dodoRequest("POST", `/subscriptions/${encodeURIComponent(subscriptionId)}/change-plan`, {
+/**
+ * Upgrade or downgrade an existing subscription; the webhook then switches the plan.
+ * The plan only changes once any extra amount is paid. Dodo is asked for a payment
+ * link so the customer approves that amount themselves: an automatic charge cannot
+ * be taken straight away on Indian card and UPI mandates (RBI pre-debit notice).
+ * Returns the link, or null when nothing is due or links are not enabled for the
+ * business, in which case Dodo charges the saved payment method.
+ */
+export async function changeDodoPlan(input: { subscriptionId: string; plan: PaidPlan; period: BillingPeriod; currentPeriod: BillingPeriod | null; returnUrl: string }) {
+  const productId = await productIdFor(input.plan, input.period);
+  const path = `/subscriptions/${encodeURIComponent(input.subscriptionId)}/change-plan`;
+  const body = {
     product_id: productId,
     quantity: 1,
-    proration_billing_mode: "prorated_immediately",
+    // Same billing period: charge or credit only the difference and keep the renewal date.
+    // Monthly <-> yearly: credit the unused time and start a new cycle.
+    proration_billing_mode: input.currentPeriod === input.period ? "prorated_immediately_keep_cycle" : "prorated_immediately",
+    effective_at: "immediately",
     on_payment_failure: "prevent_change",
-  });
+  };
+  try {
+    const result = await dodoRequest<{ payment_link?: string | null }>("POST", path, {
+      ...body,
+      collect_via_payment_link: true,
+      cancel_older_payment_link: true,
+      return_url: input.returnUrl,
+    });
+    return result.payment_link ?? null;
+  } catch (err) {
+    // 422: "Collect plan change payments by payment link" is off for this business.
+    if (!(err instanceof DodoError) || err.status !== 422) throw err;
+    console.warn(`Dodo plan change by payment link unavailable, charging the saved method instead: ${err.message}`);
+    await dodoRequest("POST", path, body);
+    return null;
+  }
 }
 
 export async function createDodoPortalLink(customerId: string, returnUrl: string) {

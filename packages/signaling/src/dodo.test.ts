@@ -61,6 +61,7 @@ test("dodo checkout and webhooks drive the project plan", async (t) => {
   });
 
   const calls: Array<{ method: string; path: string; body: any }> = [];
+  let linksEnabled = true;
   t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
     const path = new URL(url).pathname;
     const body = init.body ? JSON.parse(String(init.body)) : null;
@@ -74,7 +75,10 @@ test("dodo checkout and webhooks drive the project plan", async (t) => {
     ] });
     if (path === "/customers") return json({ customer_id: "cus_a" });
     if (path === "/checkouts") return json({ session_id: "cks_1", checkout_url: "https://test.checkout.dodopayments.com/cks_1" });
-    if (path.endsWith("/change-plan")) return json({ payment_id: "pay_2" });
+    if (path.endsWith("/change-plan")) {
+      if (body.collect_via_payment_link && !linksEnabled) return new Response('{"code":"FEATURE_NOT_ENABLED"}', { status: 422 });
+      return json(body.collect_via_payment_link ? { payment_id: "pay_2", payment_link: "https://test.checkout.dodopayments.com/link_2" } : { payment_id: "pay_2", payment_link: null });
+    }
     if (path.endsWith("/customer-portal/session")) return json({ link: "https://portal.dodo.test/x" });
     return new Response("not found", { status: 404 });
   });
@@ -136,9 +140,22 @@ test("dodo checkout and webhooks drive the project plan", async (t) => {
     assert.equal((await app.inject({ url: "/v1/portal/billing/checkout", method: "POST", headers: portal(), payload: { plan: "starter", period: "monthly" } })).statusCode, 409);
     const res = await app.inject({ url: "/v1/portal/billing/checkout", method: "POST", headers: portal(), payload: { plan: "pro", period: "monthly" } });
     assert.equal(res.statusCode, 200, res.body);
-    assert.equal(res.json().changed, true);
+    assert.equal(res.json().url, "https://test.checkout.dodopayments.com/link_2", "upgrades send the customer to pay the difference");
     const change = calls.find((c) => c.path === "/subscriptions/sub_1/change-plan")!;
     assert.equal(change.body.product_id, "pdt_pm");
+    assert.equal(change.body.proration_billing_mode, "prorated_immediately_keep_cycle");
+    assert.equal(change.body.on_payment_failure, "prevent_change");
+    assert.equal(change.body.collect_via_payment_link, true);
+    assert.match(change.body.return_url, /#\/portal\/billing\?checkout=return$/);
+    linksEnabled = false;
+    const fallback = await app.inject({ url: "/v1/portal/billing/checkout", method: "POST", headers: portal(), payload: { plan: "pro", period: "yearly" } });
+    assert.equal(fallback.statusCode, 200, fallback.body);
+    assert.equal(fallback.json().changed, true, "without payment links the saved method is charged");
+    const retried = calls.filter((c) => c.path === "/subscriptions/sub_1/change-plan").slice(-2);
+    assert.equal(retried[0].body.collect_via_payment_link, true);
+    assert.equal(retried[1].body.collect_via_payment_link, undefined);
+    assert.equal(retried[1].body.proration_billing_mode, "prorated_immediately", "switching period starts a new cycle");
+    linksEnabled = true;
     assert.equal(calls.filter((c) => c.path === "/checkouts").length, before);
     assert.equal((await deliver("subscription.plan_changed", sub("active", { product_id: "pdt_pm" }))).json().outcome, "applied");
     assert.equal((await plan()).plan, "pro");

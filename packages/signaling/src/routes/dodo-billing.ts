@@ -50,8 +50,9 @@ export async function registerDodoBillingRoutes(app: FastifyInstance, secret: st
         if (billing.plan === plan && billing.billingPeriod === period) {
           return reply.code(409).send({ error: `You are already on ${BILLING_PLANS[plan].name} (${period}).` });
         }
-        await changeDodoPlan(billing.subscriptionId!, plan, period);
-        return { changed: true, message: `Switching to ${BILLING_PLANS[plan].name} (${period}). Any price difference is charged or credited pro rata; the plan updates here within a minute.` };
+        const paymentLink = await changeDodoPlan({ subscriptionId: billing.subscriptionId!, plan, period, currentPeriod: billing.billingPeriod, returnUrl: billingReturnUrl() });
+        if (paymentLink) return { url: paymentLink };
+        return { changed: true, message: `Switching to ${BILLING_PLANS[plan].name} (${period}). Any difference is charged to your saved payment method or credited to your account. Your plan updates here once the payment clears, usually within a minute; card and UPI mandates in India can take up to a day.` };
       }
       if (!customer?.email) return reply.code(400).send({ error: "Sign in with your account email to subscribe." });
       const customerId = await ensureDodoCustomer(claims.appId, customer.email, customer.name || customer.company);
