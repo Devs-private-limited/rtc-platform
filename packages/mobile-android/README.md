@@ -16,7 +16,7 @@ Kotlin library for chat and WebRTC calls against the RTC Platform signaling serv
 
 ```kotlin
 dependencies {
-    implementation(project(":sdk")) // or Maven when published
+    implementation("com.devsquarelabs:rtcexpress-android:0.1.0") // Maven Central
 }
 ```
 
