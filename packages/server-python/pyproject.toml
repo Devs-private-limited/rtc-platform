@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rtcexpress-server"
+version = "0.1.0"
+description = "RTCExpress server SDK for Python: create short-lived user tokens for voice calls, video calls and in-app chat."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Devsquare Labs", email = "support@devsquarelabs.com" }]
+keywords = ["rtcexpress", "webrtc", "voice-call", "video-call", "chat", "token", "sdk"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Communications :: Telephony",
+  "Topic :: Software Development :: Libraries",
+  "Typing :: Typed",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://rtc.devsquarelabs.com"
+Documentation = "https://rtc.devsquarelabs.com/docs"
+Issues = "https://github.com/Devs-private-limited/rtcexpress-guides/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rtcexpress_server = ["py.typed"]

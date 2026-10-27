@@ -1,0 +1,61 @@
+{
+  "name": "rtcexpress-server",
+  "version": "0.1.0",
+  "description": "RTCExpress server SDK for Node.js: create short-lived user tokens for voice calls, video calls and in-app chat.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "test": "node --test --experimental-strip-types src/index.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "license": "MIT",
+  "author": "Devsquare Labs <support@devsquarelabs.com>",
+  "homepage": "https://rtc.devsquarelabs.com",
+  "bugs": {
+    "url": "https://github.com/Devs-private-limited/rtcexpress-guides/issues",
+    "email": "support@devsquarelabs.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Devs-private-limited/rtcexpress-guides.git"
+  },
+  "keywords": [
+    "rtcexpress",
+    "webrtc",
+    "voice-call",
+    "video-call",
+    "chat",
+    "token",
+    "server",
+    "sdk"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.3"
+  }
+}
