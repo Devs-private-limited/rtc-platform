@@ -10,13 +10,14 @@ describe("getIceConfig", () => {
     process.env = { ...prev };
   });
 
-  it("returns static TURN when no userId", () => {
+  it("returns only STUN when no userId", () => {
     process.env.TURN_URL = "turn:example.com:3478";
     process.env.TURN_USERNAME = "rtc";
     process.env.TURN_PASSWORD = "secret";
+    process.env.TURN_STATIC_AUTH_SECRET = "turn-secret";
     const config = getIceConfig();
-    assert.equal(config.iceServers.length, 3);
-    assert.equal(config.iceServers[2]?.username, "rtc");
+    assert.equal(config.iceServers.length, 2);
+    assert.ok(config.iceServers.every((s) => !String(s.urls).startsWith("turn:") && !s.credential));
   });
 
   it("returns per-session TURN credentials when userId provided", () => {

@@ -13,7 +13,8 @@ export function getIceConfig(opts: { userId?: string; ttlSec?: number } = {}): I
   // REST/HMAC credentials only work when coturn uses --use-auth-secret.
   // The default compose deployment uses --user and requires static credentials.
   const turnSecret = process.env.TURN_STATIC_AUTH_SECRET;
-  if (!turnUrl) return { iceServers };
+  // TURN relays traffic on our bandwidth, so only callers with a valid user token get it.
+  if (!turnUrl || !opts.userId) return { iceServers };
 
   if (turnSecret && opts.userId) {
     const ttl = opts.ttlSec ?? DEFAULT_TURN_TTL_SEC;

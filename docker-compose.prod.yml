@@ -46,8 +46,10 @@ services:
       --listening-port=3478
       --fingerprint
       --lt-cred-mech
-      --user=${TURN_USERNAME}:${TURN_PASSWORD}
+      --use-auth-secret
+      --static-auth-secret=${TURN_STATIC_AUTH_SECRET:?set TURN_STATIC_AUTH_SECRET in .env.production}
       --realm=${DOMAIN}
+      --denied-peer-ip=169.254.0.0-169.254.255.255
       --no-cli
       --no-tls
       --no-dtls
@@ -73,8 +75,8 @@ services:
       RTMP_INGEST_URL: rtmp://127.0.0.1/live
       HLS_PUBLIC_URL: https://${DOMAIN}/hls
       TURN_URL: turn:${DOMAIN}:3478
-      TURN_USERNAME: ${TURN_USERNAME}
-      TURN_PASSWORD: ${TURN_PASSWORD}
+      # Signs short-lived per-user TURN passwords; must match coturn's --static-auth-secret.
+      TURN_STATIC_AUTH_SECRET: ${TURN_STATIC_AUTH_SECRET:?set TURN_STATIC_AUTH_SECRET in .env.production}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DEMO_APP_SECRET: ${DEMO_APP_SECRET:-}
       # Outbound account verification and password-reset email. These values
