@@ -58,7 +58,7 @@ mavenPublishing {
             }
         }
         scm {
-            url.set("https://github.com/Devs-private-limited/rtcexpress-public-guides")
+            url.set("https://github.com/Devs-private-limited/rtcexpress-guides")
         }
     }
 }

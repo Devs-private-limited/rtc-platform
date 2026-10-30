@@ -2,6 +2,8 @@
 
 Kotlin library for chat and WebRTC calls against the RTC Platform signaling server.
 
+**Website:** https://rtc.devsquarelabs.com · **Android guide:** https://rtc.devsquarelabs.com/sdk/android · **Tutorial:** https://rtc.devsquarelabs.com/tutorials/android-voice-calling
+
 ## Features
 
 - WebSocket signaling (chat, 1:1 calls)
