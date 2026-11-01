@@ -78,7 +78,7 @@ export async function registerPortalRoutes(app: FastifyInstance, jwtSecret: stri
           status: subscription?.status ?? null,
           renewsAt: subscription?.renewsAt ?? null,
           cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
-          canManage: Boolean(subscription?.customerId),
+          canManage: Boolean(subscription?.customerId && subscription?.subscriptionId),
         },
         integration: {
           serverUrl: process.env.PUBLIC_PLATFORM_URL || `https://${process.env.DOMAIN || "rtcplatform.duckdns.org"}`,

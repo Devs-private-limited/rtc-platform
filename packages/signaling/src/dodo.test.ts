@@ -55,6 +55,8 @@ test("dodo checkout and webhooks drive the project plan", async (t) => {
   await pg.exec(await readFile(new URL("../migrations/014_account_security.sql", import.meta.url), "utf8"));
   const migration = await readFile(new URL("../migrations/019_dodo_billing.sql", import.meta.url), "utf8");
   await pg.exec(migration); await pg.exec(migration);
+  const payments = await readFile(new URL("../migrations/020_billing_payments.sql", import.meta.url), "utf8");
+  await pg.exec(payments); await pg.exec(payments);
   await pg.query(`INSERT INTO customer_accounts(email, password_hash, name, app_id) VALUES ('a@example.test', 'x', 'Ann', 'app-a')`);
   t.mock.method(getPool()!, "query", async (sql: string, args?: unknown[]) => {
     const result = await pg.query(sql, args);
@@ -81,6 +83,7 @@ test("dodo checkout and webhooks drive the project plan", async (t) => {
       return json(body.collect_via_payment_link ? { payment_id: "pay_2", payment_link: "https://test.checkout.dodopayments.com/link_2" } : { payment_id: "pay_2", payment_link: null });
     }
     if (path.endsWith("/customer-portal/session")) return json({ link: "https://portal.dodo.test/x" });
+    if (path === "/invoices/payments/pay_10") return new Response("%PDF-1.4 test", { status: 200, headers: { "content-type": "application/pdf" } });
     return new Response("not found", { status: 404 });
   });
 
@@ -190,5 +193,29 @@ test("dodo checkout and webhooks drive the project plan", async (t) => {
     assert.equal(res.statusCode, 200, res.body);
     assert.equal(res.json().url, "https://portal.dodo.test/x");
     assert.equal((await app.inject({ url: "/v1/portal/billing/manage", method: "POST", headers: portal("app-b") })).statusCode, 404);
+  });
+
+  await t.test("payments and refunds are saved and listed only for their own project", async () => {
+    const pay = { payment_id: "pay_10", status: "succeeded", total_amount: 900, currency: "usd", created_at: "2026-11-01T10:00:00Z",
+      subscription_id: "sub_2", customer: { customer_id: "cus_a" }, product_cart: [{ product_id: "pdt_sm", quantity: 1 }] };
+    assert.equal((await deliver("payment.succeeded", pay)).json().outcome, "applied");
+    assert.equal((await deliver("payment.succeeded", pay)).json().outcome, "applied"); // new webhook id, same payment: upsert
+    assert.equal((await deliver("payment.failed", { ...pay, payment_id: "pay_11", status: "failed", created_at: "2026-11-02T10:00:00Z" })).json().outcome, "applied");
+    let list = (await app.inject({ url: "/v1/portal/billing/payments", headers: portal() })).json().payments;
+    assert.equal(list.length, 2);
+    assert.deepEqual([list[0].paymentId, list[0].status], ["pay_11", "failed"]);
+    assert.deepEqual([list[1].amountMinor, list[1].currency, list[1].description], [900, "USD", "RTCExpress Starter (Monthly)"]);
+    assert.equal((await app.inject({ url: "/v1/portal/billing/payments", headers: portal("app-b") })).json().payments.length, 0);
+
+    assert.equal((await deliver("refund.succeeded", { refund_id: "ref_1", payment_id: "pay_10", amount: null })).json().outcome, "applied");
+    assert.equal((await deliver("refund.succeeded", { refund_id: "ref_1", payment_id: "pay_10", amount: null })).json().outcome, "duplicate");
+    list = (await app.inject({ url: "/v1/portal/billing/payments", headers: portal() })).json().payments;
+    assert.equal(list[1].refundedMinor, 900);
+
+    const invoice = await app.inject({ url: "/v1/portal/billing/payments/pay_10/invoice", headers: portal() });
+    assert.equal(invoice.statusCode, 200, invoice.body);
+    assert.equal(invoice.headers["content-type"], "application/pdf");
+    assert.equal((await app.inject({ url: "/v1/portal/billing/payments/pay_10/invoice", headers: portal("app-b") })).statusCode, 404);
+    assert.equal((await app.inject({ url: "/v1/portal/billing/payments/pay_11/invoice", headers: portal() })).statusCode, 404);
   });
 });

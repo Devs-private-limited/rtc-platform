@@ -259,8 +259,11 @@ export async function handleDodoWebhook(
     [webhookId, type.slice(0, 64)]
   );
   if (!claimed.rowCount) return "duplicate";
-  if (!type.startsWith("subscription.") || !event.data) return "ignored";
+  const handled = type.startsWith("subscription.") || type.startsWith("payment.") || type === "refund.succeeded";
+  if (!handled || !event.data) return "ignored";
   try {
+    if (type.startsWith("payment.")) return await recordPayment(event.data as DodoPaymentData);
+    if (type === "refund.succeeded") return await recordRefund(event.data as DodoRefundData);
     return await applySubscriptionEvent(event.data, new Date(timestampSeconds * 1000));
   } catch (err) {
     // Release the claim so Dodo's retry processes the event again.
@@ -305,4 +308,101 @@ async function applySubscriptionEvent(data: DodoSubscriptionData, eventAt: Date)
     [appId, data.subscription_id, status, eventAt.toISOString()]
   );
   return result.rowCount ? "applied" : "ignored";
+}
+
+interface DodoPaymentData {
+  payment_id?: string;
+  status?: string | null;
+  total_amount?: number;
+  currency?: string;
+  created_at?: string;
+  subscription_id?: string | null;
+  customer?: { customer_id?: string };
+  metadata?: Record<string, unknown>;
+  product_cart?: Array<{ product_id?: string }> | null;
+}
+
+interface DodoRefundData {
+  refund_id?: string;
+  payment_id?: string;
+  amount?: number | null;
+}
+
+/** Save (or update) a payment so the console can list it from our own database. */
+async function recordPayment(data: DodoPaymentData): Promise<WebhookOutcome> {
+  if (!data.payment_id) return "ignored";
+  const appId = await resolveAppId({ subscription_id: data.subscription_id ?? undefined, customer: data.customer, metadata: data.metadata });
+  if (!appId) {
+    console.warn(`Dodo payment ${data.payment_id} does not match any project; ignored`);
+    return "ignored";
+  }
+  const productId = data.product_cart?.[0]?.product_id;
+  const product = productId ? await planForProduct(productId).catch(() => null) : null;
+  const description = product
+    ? `RTCExpress ${product.plan === "pro" ? "Pro" : "Starter"} (${product.period === "yearly" ? "Yearly" : "Monthly"})`
+    : "RTCExpress subscription";
+  await getPool()!.query(
+    `INSERT INTO billing_payments (payment_id, app_id, subscription_id, status, amount_minor, currency, description, paid_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (payment_id) DO UPDATE SET status = EXCLUDED.status, amount_minor = EXCLUDED.amount_minor,
+       currency = EXCLUDED.currency, subscription_id = COALESCE(EXCLUDED.subscription_id, billing_payments.subscription_id), updated_at = NOW()`,
+    [data.payment_id, appId, data.subscription_id ?? null, String(data.status || "processing").slice(0, 32),
+      Math.max(0, Math.round(Number(data.total_amount) || 0)), String(data.currency || "USD").slice(0, 8).toUpperCase(),
+      description, data.created_at ? new Date(data.created_at).toISOString() : new Date().toISOString()]
+  );
+  return "applied";
+}
+
+async function recordRefund(data: DodoRefundData): Promise<WebhookOutcome> {
+  if (!data.refund_id || !data.payment_id) return "ignored";
+  const db = getPool()!;
+  const amount = Math.max(0, Math.round(Number(data.amount) || 0));
+  const fresh = await db.query(`INSERT INTO billing_refunds (refund_id, payment_id, amount_minor) VALUES ($1,$2,$3) ON CONFLICT (refund_id) DO NOTHING`, [data.refund_id, data.payment_id, amount]);
+  if (!fresh.rowCount) return "duplicate";
+  // amount is null for a full refund: count the whole payment.
+  const result = await db.query(
+    `UPDATE billing_payments SET refunded_minor = LEAST(amount_minor, refunded_minor + CASE WHEN $2::bigint > 0 THEN $2::bigint ELSE amount_minor END), updated_at = NOW()
+     WHERE payment_id = $1`,
+    [data.payment_id, amount]
+  );
+  return result.rowCount ? "applied" : "ignored";
+}
+
+export interface PaymentRow {
+  paymentId: string;
+  status: string;
+  amountMinor: number;
+  refundedMinor: number;
+  currency: string;
+  description: string;
+  paidAt: string;
+}
+
+export async function listAppPayments(appId: string): Promise<PaymentRow[]> {
+  const db = getPool();
+  if (!db) return [];
+  const result = await db.query(
+    `SELECT payment_id, status, amount_minor, refunded_minor, currency, description, paid_at
+     FROM billing_payments WHERE app_id = $1 ORDER BY paid_at DESC LIMIT 100`,
+    [appId]
+  );
+  return result.rows.map((r) => ({
+    paymentId: r.payment_id, status: r.status, amountMinor: Number(r.amount_minor), refundedMinor: Number(r.refunded_minor),
+    currency: r.currency, description: r.description || "RTCExpress subscription", paidAt: new Date(r.paid_at).toISOString(),
+  }));
+}
+
+/** Invoice PDF for one of this project's successful payments (null if it isn't theirs). */
+export async function fetchPaymentInvoice(appId: string, paymentId: string): Promise<Buffer | null> {
+  const db = getPool();
+  if (!db) return null;
+  const owned = await db.query(`SELECT 1 FROM billing_payments WHERE app_id = $1 AND payment_id = $2 AND status = 'succeeded'`, [appId, paymentId]);
+  if (!owned.rowCount) return null;
+  const { apiKey, baseUrl } = dodoConfig();
+  if (!apiKey) throw new DodoError(503, "Dodo Payments is not configured");
+  const res = await fetch(`${baseUrl}/invoices/payments/${encodeURIComponent(paymentId)}`, {
+    headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new DodoError(res.status, `Dodo invoice ${paymentId} failed (${res.status})`);
+  return Buffer.from(await res.arrayBuffer());
 }

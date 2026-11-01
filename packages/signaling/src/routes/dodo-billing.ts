@@ -8,6 +8,8 @@ import {
   createDodoPortalLink,
   dodoConfig,
   ensureDodoCustomer,
+  fetchPaymentInvoice,
+  listAppPayments,
   getAppBilling,
   handleDodoWebhook,
   hasLiveSubscription,
@@ -61,6 +63,28 @@ export async function registerDodoBillingRoutes(app: FastifyInstance, secret: st
     } catch (err) {
       const failure = dodoFailure(err);
       return reply.code(failure.status).send({ error: failure.error });
+    }
+  });
+
+  // Payment history from our own database (filled by Dodo payment/refund webhooks).
+  app.get("/v1/portal/billing/payments", async (req, reply) => {
+    const claims = await requirePortalUser(req, reply, secret); if (!claims) return;
+    return { payments: await listAppPayments(claims.appId) };
+  });
+
+  app.get<{ Params: { paymentId: string } }>("/v1/portal/billing/payments/:paymentId/invoice", async (req, reply) => {
+    const claims = await requirePortalUser(req, reply, secret); if (!claims) return;
+    if (!rateLimit(`billing-invoice:${claims.appId}`, 20, 60_000)) return reply.code(429).send({ error: "Too many requests. Try again shortly." });
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(req.params.paymentId)) return reply.code(400).send({ error: "Invalid payment" });
+    try {
+      const pdf = await fetchPaymentInvoice(claims.appId, req.params.paymentId);
+      if (!pdf) return reply.code(404).send({ error: "Invoice not found for this project" });
+      return reply.header("Content-Type", "application/pdf")
+        .header("Content-Disposition", `attachment; filename="RTCExpress-invoice-${req.params.paymentId}.pdf"`)
+        .header("Cache-Control", "private, no-store").send(pdf);
+    } catch (err) {
+      const failure = dodoFailure(err);
+      return reply.code(failure.status).send({ error: "The invoice could not be downloaded right now. Please try again in a few minutes." });
     }
   });
 
