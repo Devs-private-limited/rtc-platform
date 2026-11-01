@@ -3,6 +3,7 @@ import { issueToken } from "../auth.js";
 import { getBillingSummary } from "../billing.js";
 import { authenticateCustomer, createCustomerAccount } from "../customers.js";
 import { rateLimit } from "../rate-limit.js";
+import { emailConfigured, requestAccountLink } from "../account-security.js";
 
 const AUTH_LIMIT = 10;
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
@@ -39,6 +40,13 @@ export async function registerAuthRoutes(app: FastifyInstance, jwtSecret: string
         name: req.body?.name,
         company: req.body?.company,
       });
+      // Send the "verify your email" link right away. Signup must not fail or wait if the email
+      // provider is slow or down; the customer can request a new link from Account access.
+      if (emailConfigured()) {
+        void requestAccountLink(created.email, "verify").catch((error) =>
+          req.log.error({ err: error instanceof Error ? error.message : String(error) }, "Signup verification email failed")
+        );
+      }
       const billing = await getBillingSummary(created.appId);
       const session = portalSession(
         { appId: created.appId, appName: created.appName, email: created.email },
