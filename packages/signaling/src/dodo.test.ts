@@ -52,6 +52,7 @@ test("dodo checkout and webhooks drive the project plan", async (t) => {
   await pg.exec(`CREATE TABLE apps(app_id VARCHAR(64) PRIMARY KEY, name TEXT, plan VARCHAR(32) NOT NULL DEFAULT 'free', active BOOLEAN DEFAULT TRUE, portal_version INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW());
     INSERT INTO apps(app_id, name) VALUES ('app-a', 'First'), ('app-b', 'Second');`);
   await pg.exec(await readFile(new URL("../migrations/012_customer_accounts.sql", import.meta.url), "utf8"));
+  await pg.exec(await readFile(new URL("../migrations/014_account_security.sql", import.meta.url), "utf8"));
   const migration = await readFile(new URL("../migrations/019_dodo_billing.sql", import.meta.url), "utf8");
   await pg.exec(migration); await pg.exec(migration);
   await pg.query(`INSERT INTO customer_accounts(email, password_hash, name, app_id) VALUES ('a@example.test', 'x', 'Ann', 'app-a')`);
