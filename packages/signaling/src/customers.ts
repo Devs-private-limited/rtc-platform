@@ -14,6 +14,7 @@ export interface CustomerAccount {
   company: string | null;
   appId: string;
   createdAt: string;
+  emailVerified?: boolean;
 }
 
 function hashPassword(password: string) {
@@ -116,7 +117,7 @@ export async function getCustomerByAppId(appId: string): Promise<CustomerAccount
   if (!db) return null;
 
   const result = await db.query(
-    `SELECT id, email, name, company, app_id, created_at FROM customer_accounts WHERE app_id = $1`,
+    `SELECT id, email, name, company, app_id, created_at, email_verified_at FROM customer_accounts WHERE app_id = $1`,
     [appId]
   );
   if (!result.rowCount) return null;
@@ -129,5 +130,6 @@ export async function getCustomerByAppId(appId: string): Promise<CustomerAccount
     company: row.company,
     appId: row.app_id,
     createdAt: row.created_at,
+    emailVerified: Boolean(row.email_verified_at),
   };
 }

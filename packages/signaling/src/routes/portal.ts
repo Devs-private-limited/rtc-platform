@@ -69,6 +69,7 @@ export async function registerPortalRoutes(app: FastifyInstance, jwtSecret: stri
         appId: claims.appId,
         appName: name,
         email: customer?.email ?? null,
+        emailVerified: customer ? Boolean(customer.emailVerified) : null,
         billing,
         plans: BILLING_PLANS,
         subscription: {

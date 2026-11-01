@@ -44,3 +44,28 @@ test("password/secret session version changes revoke old portal tokens", async (
   assert.equal((await request(1)).statusCode, 401);
   assert.equal((await request(2)).statusCode, 200);
 });
+
+test("verification email: public page refuses it; console sends it only to the signed-in customer's own email", async (t) => {
+  const previous = { ...process.env };
+  Object.assign(process.env, { DATABASE_URL: "postgresql://unused/test", RESEND_API_KEY: "test-only", EMAIL_FROM: "test@example.com", PUBLIC_WEBSITE_URL: "https://example.com" });
+  t.after(async () => { await closeDb(); for (const key of ["DATABASE_URL","RESEND_API_KEY","EMAIL_FROM","PUBLIC_WEBSITE_URL"]) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; } });
+  let verified = false; const sentTo: string[] = [];
+  t.mock.method(getPool()!, "query", async (sql: string) => {
+    if (sql.includes("portal_version")) return { rowCount: 1, rows: [{ portal_version: 0 }] };
+    if (sql.includes("WHERE app_id")) return { rowCount: 1, rows: [{ id: "acc", email: "owner@example.com", name: null, company: null, app_id: "app-v", created_at: "2026-11-01", email_verified_at: verified ? "2026-11-01" : null }] };
+    if (sql.startsWith("SELECT")) return { rowCount: 1, rows: [{ id: "acc", email: "owner@example.com" }] };
+    return { rowCount: 1, rows: [] };
+  });
+  t.mock.method(globalThis, "fetch", async (_url: string, options: RequestInit) => { sentTo.push(...JSON.parse(options.body as string).to); return new Response("{}", { status: 200 }); });
+  const { registerAccountSecurityRoutes } = await import("./routes/account-security.js");
+  const app = Fastify(); t.after(() => app.close()); await registerAccountSecurityRoutes(app, "test");
+  const publicVerify = await app.inject({ method: "POST", url: "/v1/auth/email-link", payload: { email: "owner@example.com", purpose: "verify" } });
+  assert.equal(publicVerify.statusCode, 400); assert.equal(sentTo.length, 0);
+  const auth = { authorization: `Bearer ${issueToken({ appId: "app-v", userId: "__portal__", sessionVersion: 0 }, "test")}` };
+  assert.equal((await app.inject({ method: "POST", url: "/v1/portal/send-verification" })).statusCode, 401);
+  const sent = await app.inject({ method: "POST", url: "/v1/portal/send-verification", headers: auth });
+  assert.equal(sent.statusCode, 200); assert.deepEqual(sentTo, ["owner@example.com"]);
+  verified = true;
+  const already = await app.inject({ method: "POST", url: "/v1/portal/send-verification", headers: auth });
+  assert.equal(already.json().verified, true); assert.equal(sentTo.length, 1);
+});
