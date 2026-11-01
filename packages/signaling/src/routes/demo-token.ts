@@ -3,6 +3,7 @@ import type { TokenResponse } from "@rtc/protocol";
 import { getDemoAppId, isDemoAppEnabled } from "../apps.js";
 import { issueToken } from "../auth.js";
 import { rateLimit } from "../rate-limit.js";
+import { classifyDemoRoom, DEFAULT_DEMO_GOOGLE_CLIENT_ID, verifyGoogleIdToken } from "../demo-rooms.js";
 
 interface DemoTokenDeps {
   jwtSecret: string;
@@ -22,7 +23,7 @@ export async function registerDemoTokenRoutes(app: FastifyInstance, deps: DemoTo
    * demo app, and only while that app is enabled — so the demo can be turned
    * off entirely by not configuring one.
    */
-  app.post<{ Body: { userId?: string; roomId?: string } }>(
+  app.post<{ Body: { userId?: string; roomId?: string; googleIdToken?: string } }>(
     "/v1/demo/token",
     async (req, reply) => {
       if (!rateLimit(`demo-token:${req.ip}`, DEMO_TOKEN_LIMIT, DEMO_TOKEN_WINDOW_MS)) {
@@ -41,7 +42,21 @@ export async function registerDemoTokenRoutes(app: FastifyInstance, deps: DemoTo
         return reply.status(400).send({ error: "userId is required" });
       }
 
-      const roomId = req.body?.roomId?.trim() || undefined;
+      // Every demo token is scoped to one room, and private rooms only go to their two members.
+      const roomId = req.body?.roomId?.trim() || "";
+      const room = classifyDemoRoom(roomId);
+      if (room.kind === "invalid") {
+        return reply.status(400).send({ error: "This demo app version is out of date. Please install the latest demo app." });
+      }
+      if (room.kind === "pair") {
+        if (!room.members.includes(userId)) {
+          return reply.status(403).send({ error: "This private chat belongs to two other people." });
+        }
+        const verified = await verifyGoogleIdToken(req.body?.googleIdToken || "", process.env.DEMO_GOOGLE_CLIENT_ID || DEFAULT_DEMO_GOOGLE_CLIENT_ID);
+        if (verified !== userId) {
+          return reply.status(401).send({ error: "Google sign-in could not be confirmed. Sign out and sign in again." });
+        }
+      }
       const token = issueToken({ appId: getDemoAppId(), userId, roomId }, deps.jwtSecret);
       const response: TokenResponse = { token, expiresIn: 3600 };
       return response;
