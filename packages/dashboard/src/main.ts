@@ -1,6 +1,6 @@
 import { renderEnquiries } from "./enquiries";
 import "./style.css";
-import { api, getAdminKey, setAdminKey, type AppRecord } from "./api";
+import { api, adminLogin, getAdminSession, setAdminSession, type AppRecord } from "./api";
 import { renderCustomers, escapeHtml } from './customers';
 
 const app = document.getElementById("app")!;
@@ -14,36 +14,36 @@ function fmtDate(iso: string) {
 
 function renderLogin() {
   app.innerHTML = `
-    <header class="top">
-      <div>
-        <h1>RTCExpress Administration</h1>
-        <p>Manage projects, webhooks, events and usage</p>
-      </div>
-    </header>
-    <section class="card">
-      <h2>Sign in</h2>
-      <p class="muted" style="margin-bottom:12px">Authorized administrators only. Enter your admin API key.</p>
-      <div class="row">
-        <input id="admin-key" type="password" placeholder="Admin API key" value="${escapeHtml(getAdminKey())}" />
-        <button id="login-btn">Continue</button>
-      </div>
-      <div id="login-error" class="error"></div>
-    </section>
+    <div class="login-wrap"><section class="card login-card">
+      <h1>Admin sign-in</h1>
+      <p class="muted">Use your RTCExpress console email and password. Only admin accounts can sign in here.</p>
+      <form id="login-form">
+        <label>Email<input id="admin-email" type="email" autocomplete="username" required /></label>
+        <label>Password<input id="admin-password" type="password" autocomplete="current-password" required /></label>
+        <button id="login-btn" type="submit">Sign in</button>
+      </form>
+      <div id="login-error" class="error" role="alert"></div>
+      <p class="muted" style="margin-top:16px;font-size:14px">Forgot the password? Reset it from the <a href="https://rtc.devsquarelabs.com/#/account" target="_blank" rel="noopener">console sign-in page</a>.</p>
+    </section></div>
   `;
 
-  const btn = document.getElementById("login-btn")!;
-  const input = document.getElementById("admin-key") as HTMLInputElement;
+  const form = document.getElementById("login-form") as HTMLFormElement;
+  const btn = document.getElementById("login-btn") as HTMLButtonElement;
   const err = document.getElementById("login-error")!;
 
-  btn.onclick = async () => {
+  form.onsubmit = async (event) => {
+    event.preventDefault();
     err.textContent = "";
-    setAdminKey(input.value.trim());
+    btn.disabled = true;
+    btn.textContent = "Signing in…";
     try {
-      await api.listApps();
+      await adminLogin((document.getElementById("admin-email") as HTMLInputElement).value.trim(), (document.getElementById("admin-password") as HTMLInputElement).value);
       await loadEventTypes();
       renderHome();
     } catch (e) {
-      err.textContent = e instanceof Error ? e.message : "Login failed";
+      err.textContent = e instanceof Error ? e.message : "Sign-in failed";
+      btn.disabled = false;
+      btn.textContent = "Sign in";
     }
   };
 }
@@ -120,12 +120,12 @@ async function renderHome() {
   `;
 
   document.getElementById("logout-btn")!.onclick = () => {
-    setAdminKey("");
+    setAdminSession("");
     selectedApp = null;
     renderLogin();
   };
-  document.getElementById('enquiries-btn')!.onclick=()=>renderEnquiries(app,()=>void renderHome(),()=>{setAdminKey('');selectedApp=null;renderLogin();});
-  document.getElementById('customers-btn')!.onclick=()=>renderCustomers(app,()=>void renderHome(),()=>{setAdminKey('');selectedApp=null;renderLogin();});
+  document.getElementById('enquiries-btn')!.onclick=()=>renderEnquiries(app,()=>void renderHome(),()=>{setAdminSession('');selectedApp=null;renderLogin();});
+  document.getElementById('customers-btn')!.onclick=()=>renderCustomers(app,()=>void renderHome(),()=>{setAdminSession('');selectedApp=null;renderLogin();});
 
   document.querySelectorAll(".app-item").forEach((el) => {
     el.addEventListener("click", () => {
@@ -187,7 +187,7 @@ async function renderAppDetail() {
     renderHome();
   };
   document.getElementById("logout-btn")!.onclick = () => {
-    setAdminKey("");
+    setAdminSession("");
     selectedApp = null;
     renderLogin();
   };
@@ -517,7 +517,7 @@ await rtc.callUser("user_456");</pre>
 }
 
 async function boot() {
-  if (!getAdminKey()) {
+  if (!getAdminSession()) {
     renderLogin();
     return;
   }

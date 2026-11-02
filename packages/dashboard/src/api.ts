@@ -1,11 +1,21 @@
 const API = "";
 
-export function getAdminKey() {
-  return sessionStorage.getItem("rtc_admin_key") || "";
+// Admin session from /v1/admin/login (email + password of an allow-listed console account). Lasts 8 hours.
+export function getAdminSession() {
+  return sessionStorage.getItem("rtc_admin_session") || "";
 }
 
-export function setAdminKey(key: string) {
-  sessionStorage.setItem("rtc_admin_key", key);
+export function setAdminSession(token: string) {
+  if (token) sessionStorage.setItem("rtc_admin_session", token);
+  else sessionStorage.removeItem("rtc_admin_session");
+  sessionStorage.removeItem("rtc_admin_key");
+}
+
+export async function adminLogin(email: string, password: string) {
+  const res = await fetch(`${API}/v1/admin/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Sign-in failed (${res.status})`);
+  setAdminSession(data.token);
 }
 
 export async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -13,11 +23,16 @@ export async function adminFetch<T>(path: string, init?: RequestInit): Promise<T
     ...init,
     headers: {
       "Content-Type": "application/json",
-      "x-admin-key": getAdminKey(),
+      Authorization: `Bearer ${getAdminSession()}`,
       ...(init?.headers || {}),
     },
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && getAdminSession()) {
+    // Session expired or access removed: back to the sign-in screen.
+    setAdminSession("");
+    location.reload();
+  }
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data as T;
 }

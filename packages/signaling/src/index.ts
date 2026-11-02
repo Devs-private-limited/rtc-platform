@@ -18,7 +18,7 @@ import { handleClientMessage } from "./handlers.js";
 import { getIceConfig } from "./ice.js";
 import { MessageRelay } from "./relay.js";
 import { rateLimit } from "./rate-limit.js";
-import { registerAdminRoutes } from "./routes/admin.js";
+import { registerAdminLogin, registerAdminRoutes } from "./routes/admin.js";
 import { registerCustomerRoutes } from './routes/customers.js';
 import { registerEventRoutes } from "./routes/events.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
@@ -74,6 +74,7 @@ if (env.databaseUrl) {
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true, methods:['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS'] });
 await registerAdminRoutes(app);
+await registerAdminLogin(app);
 await app.register(async scope=>registerCustomerRoutes(scope,env.jwtSecret));
 await registerWebhookRoutes(app);
 await registerEventRoutes(app);
