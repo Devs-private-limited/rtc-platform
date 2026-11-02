@@ -12,11 +12,12 @@ test('admin customer reporting and customer-owned business profiles',async t=>{
   process.env.DATABASE_URL='postgresql://unused/customer-tests';process.env.ADMIN_API_KEY='test-admin';
   const pg=new PGlite(),app=Fastify();
   t.after(async()=>{await app.close();await closeDb();await pg.close();if(previous.db===undefined)delete process.env.DATABASE_URL;else process.env.DATABASE_URL=previous.db;if(previous.admin===undefined)delete process.env.ADMIN_API_KEY;else process.env.ADMIN_API_KEY=previous.admin;});
-  await pg.exec(`CREATE TABLE apps(app_id VARCHAR(64) PRIMARY KEY,name TEXT,plan TEXT,active BOOLEAN DEFAULT TRUE,portal_version INTEGER DEFAULT 0);
+  await pg.exec(`CREATE TABLE apps(app_id VARCHAR(64) PRIMARY KEY,name TEXT,plan TEXT,active BOOLEAN DEFAULT TRUE,portal_version INTEGER DEFAULT 0,billing_period VARCHAR(16),subscription_status VARCHAR(32),subscription_renews_at TIMESTAMPTZ,subscription_cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,dodo_subscription_id VARCHAR(64));
     INSERT INTO apps(app_id,name,plan) VALUES ('app-a','First project','pro'),('app-b','Second project','free');`);
   await pg.exec(await readFile(new URL('../migrations/012_customer_accounts.sql',import.meta.url),'utf8'));
   await pg.exec('ALTER TABLE customer_accounts ADD COLUMN email_verified_at TIMESTAMPTZ');
   const migration=await readFile(new URL('../migrations/017_customer_reporting.sql',import.meta.url),'utf8');await pg.exec(migration);await pg.exec(migration);
+  await pg.exec(await readFile(new URL('../migrations/020_billing_payments.sql',import.meta.url),'utf8'));
   const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222';
   await pg.query(`INSERT INTO customer_accounts(id,email,password_hash,name,company,app_id) VALUES ($1,'first@example.test','SENSITIVE-HASH','First','Original business','app-a'),($2,'second@example.test','OTHER-HASH','Second',NULL,'app-b')`,[a,b]);
   t.mock.method(getPool()!,'query',async(sql:string,args?:unknown[])=>{const result=await pg.query(sql,args);return {...result,rowCount:result.rows.length || result.affectedRows};});
@@ -28,7 +29,7 @@ test('admin customer reporting and customer-owned business profiles',async t=>{
       assert.equal((await app.inject({url})).statusCode,401);assert.equal((await app.inject({url,headers:portal()})).statusCode,401);
     }
     const res=await app.inject({url:'/v1/admin/customers',headers:admin});assert.equal(res.statusCode,200);assert.equal(res.headers['cache-control'],'no-store');
-    assert.equal(res.json().summary.registered_customers,2);assert.equal(res.json().summary.paying_customers,0);assert.equal(res.json().paymentIntegration,'not_connected');assert.ok(!res.body.includes('HASH'));
+    assert.equal(res.json().summary.registered_customers,2);assert.equal(res.json().summary.paying_customers,0);assert.equal(res.json().paymentIntegration,'dodo');assert.ok(!res.body.includes('HASH'));
   });
   await t.test('profiles can only update the signed-in customer and cannot create payments',async()=>{
     assert.equal((await app.inject({url:'/v1/portal/business-profile',headers:portal()})).json().profile.business_name,'Original business');
@@ -40,21 +41,23 @@ test('admin customer reporting and customer-owned business profiles',async t=>{
     assert.equal((await app.inject({url:'/v1/portal/business-profile',method:'PUT',headers:portal(),payload:{...payload,website:'javascript:alert(1)'}})).statusCode,400);
     await pg.exec("UPDATE apps SET portal_version=1 WHERE app_id='app-a'");assert.equal((await app.inject({url:'/v1/portal/business-profile',headers:portal()})).statusCode,401);await pg.exec("UPDATE apps SET portal_version=0 WHERE app_id='app-a'");
   });
-  await t.test('totals count only verified paid transactions and subtract refunds',async()=>{
-    // Test fixture insertion represents trusted provider verification, never a client request.
-    await pg.query(`INSERT INTO customer_payments(account_id,provider,provider_payment_id,amount_minor,refunded_minor,status,plan_code,billing_term,paid_at,verified_at)
-      VALUES ($1,'instamojo','paid-1',10000,0,'paid','pro','monthly',NOW(),NOW()),
-      ($1,'instamojo','refund-1',20000,5000,'partially_refunded','pro','yearly',NOW(),NOW()),
-      ($2,'instamojo','pending-1',90000,0,'pending','pro','yearly',NULL,NULL),
-      ($2,'instamojo','unverified-1',80000,0,'paid','pro','yearly',NOW(),NULL)`,[a,b]);
+  await t.test('totals count only succeeded Dodo payments, per currency, and subtract refunds',async()=>{
+    // Test fixture insertion represents the Dodo webhook (trusted), never a client request.
+    await pg.query(`INSERT INTO billing_payments(payment_id,app_id,subscription_id,status,amount_minor,refunded_minor,currency,description,paid_at)
+      VALUES ('pay_1','app-a','sub_1','succeeded',2900,0,'USD','Pro monthly',NOW()-INTERVAL '1 day'),
+      ('pay_2','app-a','sub_1','succeeded',29000,500,'USD','Pro yearly',NOW()),
+      ('pay_3','app-b',NULL,'failed',900,0,'USD','Starter monthly',NOW()),
+      ('pay_4','app-b',NULL,'processing',900,0,'USD','Starter monthly',NOW())`);
+    await pg.exec("UPDATE apps SET plan='pro',subscription_status='active',billing_period='yearly' WHERE app_id='app-a'");
     const res=await app.inject({url:'/v1/admin/customers',headers:admin});const s=res.json().summary;
-    assert.equal(s.paying_customers,1);assert.equal(s.verified_payments,2);assert.equal(s.gross_minor,'30000');assert.equal(s.refunds_minor,'5000');assert.equal(s.net_minor,'25000');
+    assert.equal(s.paying_customers,1);assert.equal(s.verified_payments,2);assert.equal(s.active_subscriptions,1);
+    assert.deepEqual(s.totals,[{currency:'USD',gross_minor:'31900',refunds_minor:'500',net_minor:'31400'}]);
     const paid=await app.inject({url:'/v1/admin/customers?paid=paid',headers:admin});assert.equal(paid.json().total,1);assert.equal(paid.json().customers[0].id,a);
+    assert.equal(paid.json().customers[0].subscription_status,'active');assert.equal(paid.json().customers[0].currency,'USD');
     const unpaid=await app.inject({url:'/v1/admin/customers?paid=unpaid',headers:admin});assert.equal(unpaid.json().customers[0].id,b);
     const search=await app.inject({url:'/v1/admin/customers?q=studio',headers:admin});assert.equal(search.json().total,1);
-    const detail=await app.inject({url:`/v1/admin/customers/${a}`,headers:admin});assert.equal(detail.json().payments.length,2);assert.equal(detail.json().payments[0].billing_term,'yearly');
-    const foreign=await app.inject({url:`/v1/admin/customers/${b}`,headers:admin});assert.ok(foreign.json().payments.every((p:any)=>!p.provider_payment_id.startsWith('refund')));
-    await assert.rejects(pg.query(`INSERT INTO customer_payments(account_id,provider,provider_payment_id,amount_minor,status,plan_code,billing_term) VALUES ($1,'instamojo','paid-1',100,'paid','pro','monthly')`,[a]));
+    const detail=await app.inject({url:`/v1/admin/customers/${a}`,headers:admin});assert.equal(detail.json().payments.length,2);assert.equal(detail.json().payments[0].payment_id,'pay_2');assert.equal(detail.json().account.billing_period,'yearly');
+    const foreign=await app.inject({url:`/v1/admin/customers/${b}`,headers:admin});assert.ok(foreign.json().payments.every((p:any)=>p.payment_id!=='pay_1'&&p.payment_id!=='pay_2'));
   });
   await t.test('pagination and invalid requests do not expose records or SQL errors',async()=>{
     const page=await app.inject({url:'/v1/admin/customers?page=2',headers:admin});assert.equal(page.json().customers.length,0);assert.equal(page.json().total,2);

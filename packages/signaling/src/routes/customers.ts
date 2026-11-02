@@ -4,9 +4,10 @@ import { requireAdmin } from './admin.js';
 import { requirePortalUser } from '../portal-auth.js';
 import { rateLimit } from '../rate-limit.js';
 
-const verified="verified_at IS NOT NULL AND paid_at IS NOT NULL AND status IN ('paid','partially_refunded','refunded')";
+// Real payments come from Dodo webhooks into billing_payments (one project per account, joined by app_id).
+const verified="status='succeeded'";
 const profileColumns='business_type,business_name,phone,website,address,city,state,postal_code,country,tax_id,updated_at';
-const paymentColumns='id,provider,provider_payment_id,order_reference,amount_minor,refunded_minor,currency,status,plan_code,billing_term,paid_at,verified_at,period_start,period_end,created_at';
+const paymentColumns='payment_id,subscription_id,status,amount_minor,refunded_minor,currency,description,paid_at,updated_at';
 
 export async function registerCustomerRoutes(app:FastifyInstance,secret:string) {
   app.addHook('onSend',async(_req,reply,payload)=>{reply.header('Cache-Control','no-store');return payload;});
@@ -18,29 +19,33 @@ export async function registerCustomerRoutes(app:FastifyInstance,secret:string) 
     const filter=`($1='' OR POSITION(LOWER($1) IN LOWER(CONCAT_WS(' ',c.name,c.email,c.company,c.app_id,b.business_name)))>0)
       AND ($2='all' OR ($2='paid' AND COALESCE(p.payment_count,0)>0) OR ($2='unpaid' AND COALESCE(p.payment_count,0)=0))`;
     const base=`FROM customer_accounts c JOIN apps a ON a.app_id=c.app_id LEFT JOIN customer_business_profiles b ON b.account_id=c.id
-      LEFT JOIN (SELECT account_id,COUNT(*)::int payment_count,SUM(amount_minor)::text total_paid_minor,SUM(refunded_minor)::text refunded_minor,MAX(paid_at) last_paid_at
-        FROM customer_payments WHERE ${verified} GROUP BY account_id) p ON p.account_id=c.id WHERE ${filter}`;
+      LEFT JOIN (SELECT app_id,COUNT(*)::int payment_count,SUM(amount_minor)::text total_paid_minor,SUM(refunded_minor)::text refunded_minor,MAX(paid_at) last_paid_at,MAX(currency) currency
+        FROM billing_payments WHERE ${verified} GROUP BY app_id) p ON p.app_id=c.app_id WHERE ${filter}`;
     const [summary,customers,count]=await Promise.all([
-      db.query(`SELECT (SELECT COUNT(*)::int FROM customer_accounts) registered_customers,COUNT(DISTINCT account_id)::int paying_customers,COUNT(*)::int verified_payments,
-        COALESCE(SUM(amount_minor),0)::text gross_minor,COALESCE(SUM(refunded_minor),0)::text refunds_minor,COALESCE(SUM(amount_minor-refunded_minor),0)::text net_minor FROM customer_payments WHERE ${verified}`),
-      db.query(`SELECT c.id,c.name,c.email,c.company,c.app_id,c.created_at,a.plan,a.active,b.business_name,COALESCE(p.payment_count,0) payment_count,
-        COALESCE(p.total_paid_minor,'0') total_paid_minor,COALESCE(p.refunded_minor,'0') refunded_minor,p.last_paid_at ${base} ORDER BY c.created_at DESC,c.id LIMIT 25 OFFSET $3`,[q,paid,(page-1)*25]),
+      db.query(`SELECT (SELECT COUNT(*)::int FROM customer_accounts) registered_customers,
+        (SELECT COUNT(*)::int FROM apps WHERE plan<>'free' AND subscription_status='active') active_subscriptions,
+        (SELECT COUNT(DISTINCT app_id)::int FROM billing_payments WHERE ${verified}) paying_customers,
+        (SELECT COUNT(*)::int FROM billing_payments WHERE ${verified}) verified_payments,
+        COALESCE((SELECT json_agg(t) FROM (SELECT currency,SUM(amount_minor)::text gross_minor,SUM(refunded_minor)::text refunds_minor,SUM(amount_minor-refunded_minor)::text net_minor
+          FROM billing_payments WHERE ${verified} GROUP BY currency ORDER BY currency) t),'[]'::json) totals`),
+      db.query(`SELECT c.id,c.name,c.email,c.company,c.app_id,c.created_at,a.plan,a.active,a.billing_period,a.subscription_status,a.subscription_renews_at,a.subscription_cancel_at_period_end,b.business_name,COALESCE(p.payment_count,0) payment_count,
+        COALESCE(p.total_paid_minor,'0') total_paid_minor,COALESCE(p.refunded_minor,'0') refunded_minor,p.last_paid_at,p.currency ${base} ORDER BY c.created_at DESC,c.id LIMIT 25 OFFSET $3`,[q,paid,(page-1)*25]),
       db.query(`SELECT COUNT(*)::int total ${base}`,[q,paid]),
     ]);
-    return {summary:summary.rows[0],currency:'INR',scope:'all_time',customers:customers.rows,total:count.rows[0].total,page,pageSize:25,paymentIntegration:'not_connected'};
+    return {summary:summary.rows[0],scope:'all_time',customers:customers.rows,total:count.rows[0].total,page,pageSize:25,paymentIntegration:'dodo'};
   });
   app.get<{Params:{accountId:string};Querystring:{page?:string}}>('/v1/admin/customers/:accountId',async(req,reply)=>{
     if(!requireAdmin(req,reply))return;
     const {accountId}=req.params,page=Number(req.query.page || 1);
     if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(accountId) || !Number.isInteger(page) || page<1 || page>100000)return reply.code(400).send({error:'Invalid customer or page'});
     const db=getPool();if(!db)return reply.code(503).send({error:'Database unavailable'});
-    const account=await db.query(`SELECT c.id,c.name,c.email,c.company,c.app_id,c.created_at,c.email_verified_at,a.name project_name,a.plan,a.active
+    const account=await db.query(`SELECT c.id,c.name,c.email,c.company,c.app_id,c.created_at,c.email_verified_at,a.name project_name,a.plan,a.active,a.billing_period,a.subscription_status,a.subscription_renews_at,a.subscription_cancel_at_period_end,a.dodo_subscription_id
       FROM customer_accounts c JOIN apps a ON a.app_id=c.app_id WHERE c.id=$1`,[accountId]);
     if(!account.rows.length)return reply.code(404).send({error:'Customer not found'});
     const [profile,payments,count]=await Promise.all([
       db.query(`SELECT ${profileColumns} FROM customer_business_profiles WHERE account_id=$1`,[accountId]),
-      db.query(`SELECT ${paymentColumns} FROM customer_payments WHERE account_id=$1 ORDER BY created_at DESC,id DESC LIMIT 25 OFFSET $2`,[accountId,(page-1)*25]),
-      db.query('SELECT COUNT(*)::int total FROM customer_payments WHERE account_id=$1',[accountId]),
+      db.query(`SELECT ${paymentColumns} FROM billing_payments WHERE app_id=$1 ORDER BY paid_at DESC,payment_id DESC LIMIT 25 OFFSET $2`,[account.rows[0].app_id,(page-1)*25]),
+      db.query('SELECT COUNT(*)::int total FROM billing_payments WHERE app_id=$1',[account.rows[0].app_id]),
     ]);
     return {account:account.rows[0],profile:profile.rows[0] || null,payments:payments.rows,total:count.rows[0].total,page,pageSize:25};
   });
