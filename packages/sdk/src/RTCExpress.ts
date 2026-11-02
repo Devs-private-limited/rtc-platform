@@ -77,6 +77,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
 
   private autoReconnect = true;
   private intentionalClose = false;
+  private tokenRejected = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private reconnectBaseDelayMs = 1000;
@@ -106,6 +107,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
     this.appId = options.appId;
     this.userId = options.userId;
     this.token = options.token;
+    this.tokenRejected = false;
     this.mediaModePref = options.mediaMode || "auto";
     this.autoReconnect = options.autoReconnect !== false;
 
@@ -162,8 +164,25 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
         }
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event: CloseEvent) => {
         this.ws = null;
+        // 4001/4002: the server rejected the token (missing, invalid or expired).
+        // Retrying with the same token can never work, so fail clearly instead.
+        if (event.code === 4001 || event.code === 4002) {
+          this.tokenRejected = true;
+          const message = "Invalid or expired token. Get a new token from your backend and call init() again, or setToken(newToken) to resume a dropped session.";
+          this.emit("error", { message, code: "invalid_token" });
+          if (!settled) {
+            settled = true;
+            reject(new Error(message));
+          }
+          return;
+        }
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Connection closed before it was ready (code ${event.code}${event.reason ? `: ${event.reason}` : ""})`));
+          return;
+        }
         this.emit("disconnected");
         if (!this.intentionalClose && this.autoReconnect) {
           this.sessionSnapshot = this.captureSession();
@@ -213,7 +232,18 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
         await this.restoreSession(snapshot);
       }
     } catch {
+      if (this.tokenRejected) return; // waiting for setToken(); retrying the same token can't work
       void this.scheduleReconnect();
+    }
+  }
+
+  /** Give the SDK a fresh token (tokens expire after 1 hour). Used for the next reconnect; resumes a session dropped by token expiry. */
+  setToken(token: string) {
+    this.token = token;
+    if (this.tokenRejected && !this.ws && !this.intentionalClose) {
+      this.tokenRejected = false;
+      this.reconnectAttempts = 0;
+      void this.tryReconnect();
     }
   }
 
