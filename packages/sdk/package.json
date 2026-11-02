@@ -1,6 +1,6 @@
 {
   "name": "rtcexpress",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "RTCExpress Web SDK: add voice calls, video calls and in-app chat to any web app (WebRTC, P2P + SFU).",
   "type": "module",
   "main": "./dist/index.cjs",
