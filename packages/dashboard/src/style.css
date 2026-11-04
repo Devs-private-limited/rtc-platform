@@ -514,3 +514,17 @@ a.kpi-link:hover{border-color:var(--rx-teal);box-shadow:0 2px 10px #087e7215;bac
 .access-card hr{border:0;border-top:1px solid var(--rx-line);margin:4px 0}
 .access-card form{display:flex;flex-direction:column;gap:12px}
 .access-card button{align-self:flex-start}
+/* Needs attention */
+.att-total{display:inline-grid;place-items:center;min-width:26px;height:26px;padding:0 8px;margin-left:6px;border-radius:99px;background:#FDECEA;color:var(--rx-red);font-size:13px;vertical-align:middle}
+.att-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(330px,100%),1fr));gap:14px}
+.att-card{border:1px solid var(--rx-line);border-left-width:4px;border-radius:12px;padding:14px 16px;background:#fff}
+.att-card.bad{border-left-color:var(--rx-red)}.att-card.warn{border-left-color:#D98E04}.att-card.info{border-left-color:#5B8DEF}
+.att-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.att-head h3{margin:0;font:700 .98rem var(--rx-head);color:var(--rx-ink)}
+.att-count{font:800 1.1rem var(--rx-head);color:var(--rx-ink)}
+.att-card .note{margin:6px 0 10px}
+.att-card ul{list-style:none;display:grid;gap:6px}
+.att-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:9px 11px;border:1px solid #EAF0ED;border-radius:9px;color:var(--rx-ink);text-decoration:none;font-size:14px}
+.att-row:hover{border-color:var(--rx-teal);background:#F6FAF8;color:var(--rx-ink)}
+.att-row .sub{display:block}
+.attention.ok .all-good{color:#17633F;font-weight:600}

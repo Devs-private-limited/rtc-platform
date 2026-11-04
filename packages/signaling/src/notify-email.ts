@@ -82,3 +82,8 @@ export function sendNewSignupAlert(a: { accountId: string; email: string; name: 
     a.email
   );
 }
+
+/** Plain email to the owner alert address(es) (weekly summary etc.). */
+export function sendOwnerEmail(subject: string, text: string, html: string) {
+  return send(ownerAlertRecipients(), subject, text, html);
+}

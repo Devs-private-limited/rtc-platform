@@ -1,14 +1,16 @@
 import { adminFetch } from './api';
+import { isOwner } from './me';
 import { ago, dataTable, esc, kpis, minutes, moneyList, num, pageHeader, planBadge, when, yesNo } from './ui';
 
 export async function renderOverviewPage(view: HTMLElement) {
   view.innerHTML = pageHeader('Overview', 'The whole business at a glance. Minutes and messages are for the current month (UTC).') + '<div class="loading">Loading…</div>';
   try {
-    const o = await adminFetch<any>('/v1/admin/overview');
+    const [o, att, summary] = await Promise.all([adminFetch<any>('/v1/admin/overview'), adminFetch<any>('/v1/admin/attention').catch(() => null), adminFetch<any>('/v1/admin/weekly-summary').catch(() => null)]);
     const month = new Date(o.monthStartUtc).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
     const plans = o.plans || {};
     view.innerHTML =
       pageHeader('Overview', `The whole business at a glance. “This month” = ${esc(month)} (UTC).`, '<button class="secondary" id="ov-refresh">Refresh</button>') +
+      attentionSection(att) +
       `<section class="panel"><h2>Customers</h2>${kpis([
         ['Total customers', num(o.customers), `${num(o.verified_customers)} verified email`, '#/customers?view=all'],
         ['New this month', num(o.new_this_month), `${num(o.new_7_days)} in the last 7 days`, '#/customers?joined=month'],
@@ -37,10 +39,52 @@ export async function renderOverviewPage(view: HTMLElement) {
         ]),
         'No customers yet.',
         (o.recentSignups || []).map((c: any) => `class="clickable" data-href="#/customers/${esc(c.id)}"`)
-      )}</section>`;
+      )}</section>` + summarySection(summary);
     view.querySelectorAll<HTMLElement>('tr[data-href]').forEach((tr) => (tr.onclick = () => (location.hash = tr.dataset.href!)));
+    const sendNow = view.querySelector<HTMLButtonElement>('#ov-send-summary');
+    if (sendNow) sendNow.onclick = async () => {
+      const msg = view.querySelector<HTMLElement>('#ov-summary-msg')!;
+      sendNow.disabled = true; msg.className = 'm-msg'; msg.textContent = 'Sending…';
+      try {
+        const r = await adminFetch<any>('/v1/admin/weekly-summary/send', { method: 'POST', body: '{}' });
+        msg.textContent = r.result === 'sent' ? `Sent to ${r.recipients.join(', ')}. Check the inbox (and Spam).` : r.result === 'not-configured' ? 'Not sent: email is not set up on the server.' : 'The email could not be sent. Try again later.';
+        if (r.result !== 'sent') msg.className = 'm-msg error';
+      } catch (e) { msg.className = 'm-msg error'; msg.textContent = e instanceof Error ? e.message : 'Could not send'; }
+      sendNow.disabled = false;
+    };
     view.querySelector<HTMLButtonElement>('#ov-refresh')!.onclick = () => void renderOverviewPage(view);
   } catch (e) {
     view.querySelector('.loading')!.outerHTML = `<div class="error">${esc(e instanceof Error ? e.message : 'Could not load the overview')}</div>`;
   }
+}
+
+const GROUPS: [key: string, title: string, tip: string, tone: string][] = [
+  ['paymentProblems', 'Payment problems', 'Failed or cancelled payments in the last 30 days. Check the Dodo dashboard and contact the customer.', 'bad'],
+  ['cancellations', 'Cancelled or cancelling', 'Paid plans that ended or will end. A short “why did you leave?” email can bring them back.', 'bad'],
+  ['nearLimit', 'Near or over their limit', 'Using 80% or more of this month’s allowance: a good moment to suggest an upgrade, or give extra minutes.', 'warn'],
+  ['spikes', 'Unusual usage spikes', 'A quarter of the monthly allowance used in 24 hours. Could be a launch, or abuse: take a look.', 'warn'],
+  ['neverUsed', 'Signed up, never used their app', 'More than 3 days since sign-up and no chat or calls yet. A friendly “need help getting started?” email helps.', 'info'],
+  ['notVerified', 'Email not verified', 'More than 3 days and still not verified. They may have typed a wrong email or missed the message.', 'info'],
+];
+
+function attentionSection(att: any) {
+  if (!att) return '';
+  const total = GROUPS.reduce((n, [k]) => n + (att[k]?.length || 0), 0);
+  if (!total) return `<section class="panel attention ok"><h2>Needs attention</h2><p class="all-good">✓ Nothing needs your attention right now.</p></section>`;
+  const cards = GROUPS.filter(([k]) => att[k]?.length).map(([k, title, tip, tone]) => `
+    <div class="att-card ${tone}">
+      <div class="att-head"><h3>${esc(title)}</h3><span class="att-count">${att[k].length}</span></div>
+      <p class="note">${esc(tip)}</p>
+      <ul>${att[k].slice(0, 6).map((i: any) => `<li><a class="att-row" href="#/customers/${esc(i.accountId)}"><span><strong>${esc(i.name || i.email)}</strong>${i.name ? `<span class="sub">${esc(i.email)}</span>` : ''}<span class="sub">${esc(i.why)}</span></span>${planBadge(i.plan)}</a></li>`).join('')}</ul>
+      ${att[k].length > 6 ? `<p class="note">+ ${att[k].length - 6} more</p>` : ''}
+    </div>`).join('');
+  return `<section class="panel attention"><div class="panel-head"><h2>Needs attention <span class="att-total">${total}</span></h2></div><div class="att-grid">${cards}</div></section>`;
+}
+
+function summarySection(s: any) {
+  if (!s) return '';
+  const to = s.recipients?.length ? s.recipients.map((r: string) => esc(r)).join(', ') : '<span class="warn-text">no address set</span>';
+  return `<section class="panel"><div class="panel-head"><h2>Weekly summary email</h2>${isOwner() ? '<button class="secondary" id="ov-send-summary">Send it now</button>' : ''}</div>
+    <p class="note">${esc(s.schedule)}, a short email goes to <strong>${to}</strong> with last week’s new customers, minutes, messages, revenue and everything under “Needs attention”, so you stay up to date without opening this panel.</p>
+    <div id="ov-summary-msg" class="m-msg" role="status"></div></section>`;
 }

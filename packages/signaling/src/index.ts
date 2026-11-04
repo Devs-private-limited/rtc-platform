@@ -20,6 +20,8 @@ import { MessageRelay } from "./relay.js";
 import { rateLimit } from "./rate-limit.js";
 import { registerAdminLogin, registerAdminRoutes } from "./routes/admin.js";
 import { registerCustomerRoutes } from './routes/customers.js';
+import { registerInsightRoutes } from './routes/insights.js';
+import { startWeeklySummary } from './admin-insights.js';
 import { registerEventRoutes } from "./routes/events.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerRecordingRoutes } from "./routes/recordings.js";
@@ -76,6 +78,8 @@ await app.register(cors, { origin: true, methods:['GET','HEAD','POST','PUT','PAT
 await registerAdminRoutes(app);
 await registerAdminLogin(app);
 await app.register(async scope=>registerCustomerRoutes(scope,env.jwtSecret));
+await registerInsightRoutes(app);
+startWeeklySummary((msg) => app.log.info(msg));
 await registerWebhookRoutes(app);
 await registerEventRoutes(app);
 await registerRecordingRoutes(app);

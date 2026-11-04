@@ -14,6 +14,7 @@ function describe(e: any, d: any) {
     case 'minutes.remove': return `Removed ${esc(Number(d.minutes).toLocaleString('en-IN'))} extra minutes from ${esc(d.email)} (${esc(d.month)})`;
     case 'team.set': return `Gave <strong>${esc(e.target)}</strong> ${d.role === 'viewer' ? 'view-only' : 'admin'} access`;
     case 'team.remove': return `Removed admin access for <strong>${esc(e.target)}</strong>`;
+    case 'summary.send': return `Sent the weekly summary email (${esc(d.result)})`;
     case 'account.block': return `<strong>Blocked</strong> ${esc(d.email)}. Reason: ${esc(d.reason)}`;
     case 'account.unblock': return `Unblocked ${esc(d.email)}. Reason: ${esc(d.reason)}`;
     case 'account.delete': return `<strong>Deleted</strong> the account ${esc(d.email)}. Reason: ${esc(d.reason)}`;
