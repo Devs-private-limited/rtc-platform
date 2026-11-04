@@ -22,7 +22,7 @@ export async function adminFetch<T>(path: string, init?: RequestInit): Promise<T
   const res = await fetch(`${API}${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
       Authorization: `Bearer ${getAdminSession()}`,
       ...(init?.headers || {}),
     },

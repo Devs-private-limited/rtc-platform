@@ -175,6 +175,8 @@ export interface BillingSummary {
   period: { from: string | null; to: string | null };
   usage: UsageBreakdown;
   limits: PlanLimits;
+  /** Extra minutes an admin added for this month (already included in limits). */
+  bonusMinutes: number;
   limitStatus: {
     voiceMinutes: LimitStatus;
     videoMinutes: LimitStatus;
@@ -195,10 +197,14 @@ export function computeBillingSummary(
   appId: string,
   plan: BillingPlan,
   usage: UsageBreakdown,
-  period: { from: string | null; to: string | null } = { from: null, to: null }
+  period: { from: string | null; to: string | null } = { from: null, to: null },
+  bonusMinutes = 0
 ): BillingSummary {
   const def = BILLING_PLANS[plan];
-  const { limits } = def;
+  // Extra minutes given by an admin for this month raise the voice and total call allowance.
+  const limits = bonusMinutes > 0
+    ? { ...def.limits, voiceMinutes: def.limits.voiceMinutes + bonusMinutes, callMinutes: def.limits.callMinutes + bonusMinutes }
+    : def.limits;
 
   return {
     appId,
@@ -209,6 +215,7 @@ export function computeBillingSummary(
     period,
     usage,
     limits,
+    bonusMinutes,
     limitStatus: {
       voiceMinutes: limitStatus(usage.voiceMinutes, limits.voiceMinutes),
       videoMinutes: limitStatus(usage.videoMinutes, limits.videoMinutes),

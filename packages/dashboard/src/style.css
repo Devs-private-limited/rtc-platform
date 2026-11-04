@@ -467,3 +467,37 @@ table.data th{padding:10px 12px}table.data td{padding:11px 12px}
 .panel-head{align-items:center;margin-bottom:14px}.panel-head h2{margin:0}
 .btn-link{display:inline-flex;align-items:center;min-height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--rx-line);background:#fff;color:var(--rx-ink);font-weight:600;font-size:14px;text-decoration:none}
 .btn-link:hover{background:var(--rx-mint);color:var(--rx-ink)}
+/* Manage / plans / team (4 Nov) */
+.side-user{display:flex;flex-direction:column;gap:2px;margin-bottom:10px;font-size:12.5px;color:#C9DCD3;overflow-wrap:anywhere}
+.side-user strong{color:#fff;font-weight:600}
+.side nav{overflow-y:auto}
+button.small{min-height:32px;padding:0 12px;font-size:13px;border-radius:8px}
+.wrap{white-space:normal;display:inline-block;max-width:720px}
+.manage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr));gap:16px}
+.manage-card{border:1px solid var(--rx-line);border-radius:14px;padding:18px;background:#FAFBFA;display:flex;flex-direction:column;gap:12px}
+.manage-card h3{margin:0;font:700 1rem var(--rx-head)}
+.manage-card h4{margin:6px 0 0;font:700 .9rem var(--rx-head)}
+.manage-card .note{margin:0}
+.manage-card label{display:flex;flex-direction:column;gap:6px;font-weight:600;font-size:13.5px}
+.manage-card button[type=submit]{align-self:flex-start}
+.m-msg:empty{display:none}.m-msg{font-size:13.5px;color:var(--rx-muted)}
+.warn-box{padding:10px 12px;border-radius:10px;background:#FFF4E0;border:1px solid #F3D9A6;color:#6B4200;font-size:13.5px}
+.warn-text{color:#8A5300}
+.quick{display:flex;gap:8px;flex-wrap:wrap}
+.grants{list-style:none;display:grid;gap:8px}
+.grants li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;background:#fff;border:1px solid var(--rx-line);border-radius:10px;font-size:14px}
+.grants li .sub{display:block}
+.roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:14px}
+.roles>div{border:1px solid var(--rx-line);border-radius:12px;padding:14px;background:#FAFBFA}
+.roles p{margin-top:8px;font-size:13.5px;color:var(--rx-muted)}
+.role-owner{background:#0F2E2A;color:#fff}.role-admin{background:#E4EEFC;color:#1F4E9A}.role-viewer{background:#EEF1F0;color:#4B5D56}
+table.compare th[scope=row]{background:#fff;text-transform:none;letter-spacing:0;font:500 14px var(--rx-body);color:var(--rx-ink);position:static}
+table.compare thead th{vertical-align:top}
+table.compare .plan-desc{text-transform:none;letter-spacing:0;font-weight:400;white-space:normal;max-width:240px;margin-top:6px}
+table.compare tr.group td{background:#F6F9F7;font:700 12px var(--rx-body);text-transform:uppercase;letter-spacing:.05em;color:var(--rx-muted);padding:8px 12px}
+.tick{color:var(--rx-teal);font-weight:800}
+.how-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:14px}
+.how-grid>div{border:1px solid var(--rx-line);border-radius:12px;padding:14px 16px}
+.how-grid h3{margin:0 0 6px}
+.how-grid p{font-size:14px;color:var(--rx-muted)}
+.manage-card label .sub{display:inline;font-weight:400;margin:0}

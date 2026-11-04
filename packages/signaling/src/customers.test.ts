@@ -6,6 +6,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { getPool,closeDb } from './db.js';
 import { issueToken } from './auth.js';
 import { registerCustomerRoutes } from './routes/customers.js';
+import { BILLING_PLANS } from './billing-plans.js';
 
 test('admin customer reporting and customer-owned business profiles',async t=>{
   const previous={db:process.env.DATABASE_URL,admin:process.env.ADMIN_API_KEY};
@@ -18,7 +19,7 @@ test('admin customer reporting and customer-owned business profiles',async t=>{
   await pg.exec('ALTER TABLE customer_accounts ADD COLUMN email_verified_at TIMESTAMPTZ');
   const migration=await readFile(new URL('../migrations/017_customer_reporting.sql',import.meta.url),'utf8');await pg.exec(migration);await pg.exec(migration);
   await pg.exec(await readFile(new URL('../migrations/020_billing_payments.sql',import.meta.url),'utf8'));
-  for(const m of ['002_events_and_webhooks','003_call_sessions','008_media_sessions','009_messages','010_call_session_end_reason','018_call_session_type','021_signup_source'])await pg.exec(await readFile(new URL(`../migrations/${m}.sql`,import.meta.url),'utf8'));
+  for(const m of ['002_events_and_webhooks','003_call_sessions','008_media_sessions','004_recordings','005_recording_intelligence','006_call_quality','009_messages','010_call_session_end_reason','018_call_session_type','021_signup_source','022_admin_team_and_bonus_minutes'])await pg.exec(await readFile(new URL(`../migrations/${m}.sql`,import.meta.url),'utf8'));
   const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222';
   await pg.query(`INSERT INTO customer_accounts(id,email,password_hash,name,company,app_id) VALUES ($1,'first@example.test','SENSITIVE-HASH','First','Original business','app-a'),($2,'second@example.test','OTHER-HASH','Second',NULL,'app-b')`,[a,b]);
   t.mock.method(getPool()!,'query',async(sql:string,args?:unknown[])=>{const result=await pg.query(sql,args);return {...result,rowCount:result.rows.length || result.affectedRows};});
@@ -90,5 +91,25 @@ test('admin customer reporting and customer-owned business profiles',async t=>{
     assert.equal(o.customer_messages_month,2);assert.equal(o.active_30_days,1);assert.deepEqual(o.plans,{free:1,pro:1});assert.equal(o.recentSignups.length,2);
     const pays=(await app.inject({url:'/v1/admin/payments',headers:admin})).json();assert.equal(pays.total,4);assert.equal(pays.payments[0].email!==undefined,true);
     for(const url of ['/v1/admin/overview','/v1/admin/payments'])assert.equal((await app.inject({url,headers:portal()})).statusCode,401);
+  });
+  await t.test('admin changes plan and gives extra minutes; both raise the allowance and land in the history',async()=>{
+    const post=(url:string,payload:any)=>app.inject({method:'POST',url,headers:admin,payload});
+    assert.equal((await post(`/v1/admin/customers/${b}/plan`,{plan:'pro'})).statusCode,400,'reason required');
+    assert.equal((await post(`/v1/admin/customers/${b}/plan`,{plan:'gold',reason:'x'})).statusCode,400);
+    assert.equal((await post(`/v1/admin/customers/${b}/plan`,{plan:'starter',reason:'Friend, testing'})).statusCode,200);
+    assert.equal((await pg.query(`SELECT plan FROM apps WHERE app_id='app-b'`)).rows[0].plan,'starter');
+    assert.equal((await post(`/v1/admin/customers/${b}/plan`,{plan:'starter',reason:'again'})).statusCode,400,'same plan');
+    assert.equal((await post(`/v1/admin/customers/${b}/bonus-minutes`,{minutes:1.5,note:'x'})).statusCode,400);
+    assert.equal((await post(`/v1/admin/customers/${b}/bonus-minutes`,{minutes:500})).statusCode,400,'note required');
+    const g=await post(`/v1/admin/customers/${b}/bonus-minutes`,{minutes:500,note:'Launch goodwill'});assert.equal(g.statusCode,200,g.body);
+    const d=(await app.inject({url:`/v1/admin/customers/${b}`,headers:admin})).json();
+    assert.equal(d.account.bonus_minutes_month,500);assert.equal(d.bonusGrants.length,1);
+    assert.deepEqual(d.history.map((h:any)=>h.action),['minutes.add','plan.change']);assert.equal(d.history[0].actor,'server-api-key');
+    const { getBillingSummary }=await import('./billing.js');
+    const summary=await getBillingSummary('app-b');assert.equal(summary.bonusMinutes,500);assert.equal(summary.limits.callMinutes,BILLING_PLANS.starter.limits.callMinutes+500);
+    assert.equal((await app.inject({method:'DELETE',url:`/v1/admin/customers/${a}/bonus-minutes/${g.json().id}`,headers:admin})).statusCode,404,'grant belongs to another customer');
+    assert.equal((await app.inject({method:'DELETE',url:`/v1/admin/customers/${b}/bonus-minutes/${g.json().id}`,headers:admin})).statusCode,200);
+    assert.equal((await getBillingSummary('app-b')).bonusMinutes,0);
+    assert.equal((await app.inject({method:'POST',url:`/v1/admin/customers/${b}/plan`,headers:portal('app-b'),payload:{plan:'pro',reason:'me'}})).statusCode,401);
   });
 });

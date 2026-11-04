@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getPool } from '../db.js';
-import { requireAdmin } from './admin.js';
+import { requireAdmin, adminIdentity, audit } from './admin.js';
+import { setAppPlan } from '../apps.js';
 import { requirePortalUser } from '../portal-auth.js';
 import { rateLimit } from '../rate-limit.js';
 import { BILLING_PLANS } from '../billing-plans.js';
@@ -21,9 +22,10 @@ const usageJoin=`LEFT JOIN LATERAL (SELECT
     (SELECT COUNT(*)::int FROM call_sessions cs WHERE cs.app_id=c.app_id) AS calls_total,
     (SELECT COUNT(*)::int FROM messages m WHERE m.app_id=c.app_id) AS messages_total,
     (SELECT COUNT(*)::int FROM messages m WHERE m.app_id=c.app_id AND m.sent_at>=${monthStart}) AS messages_month,
-    (SELECT MAX(e.created_at) FROM events e WHERE e.app_id=c.app_id AND COALESCE(e.user_id,'')<>'__portal__') AS last_active_at
+    (SELECT MAX(e.created_at) FROM events e WHERE e.app_id=c.app_id AND COALESCE(e.user_id,'')<>'__portal__') AS last_active_at,
+    (SELECT COALESCE(SUM(b.minutes),0)::int FROM app_bonus_minutes b WHERE b.app_id=c.app_id AND b.month=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM')) AS bonus_minutes_month
   ) u ON true`;
-const usageColumns='ROUND(u.minutes_total::numeric,1)::float8 minutes_total,ROUND(u.minutes_month::numeric,1)::float8 minutes_month,u.calls_total,u.messages_total,u.messages_month,u.last_active_at';
+const usageColumns='ROUND(u.minutes_total::numeric,1)::float8 minutes_total,ROUND(u.minutes_month::numeric,1)::float8 minutes_month,u.calls_total,u.messages_total,u.messages_month,u.last_active_at,u.bonus_minutes_month';
 const sorts:Record<string,string>={newest:'c.created_at DESC',minutes_month:'u.minutes_month DESC NULLS LAST,c.created_at DESC',minutes_total:'u.minutes_total DESC NULLS LAST,c.created_at DESC',last_active:'u.last_active_at DESC NULLS LAST,c.created_at DESC',paid:'COALESCE(p.payment_count,0) DESC,c.created_at DESC'};
 const planLimits=Object.fromEntries(Object.entries(BILLING_PLANS).map(([id,p])=>[id,{name:p.name,callMinutes:p.limits.callMinutes,messages:p.limits.messages}]));
 
@@ -63,7 +65,7 @@ export async function registerCustomerRoutes(app:FastifyInstance,secret:string) 
       FROM customer_accounts c JOIN apps a ON a.app_id=c.app_id ${usageJoin} WHERE c.id=$1`,[accountId]);
     if(!account.rows.length)return reply.code(404).send({error:'Customer not found'});
     const appId=account.rows[0].app_id;
-    const [profile,payments,count,monthly,calls]=await Promise.all([
+    const [profile,payments,count,monthly,calls,bonuses,history]=await Promise.all([
       db.query(`SELECT ${profileColumns} FROM customer_business_profiles WHERE account_id=$1`,[accountId]),
       db.query(`SELECT ${paymentColumns} FROM billing_payments WHERE app_id=$1 ORDER BY paid_at DESC,payment_id DESC LIMIT 25 OFFSET $2`,[account.rows[0].app_id,(page-1)*25]),
       db.query('SELECT COUNT(*)::int total FROM billing_payments WHERE app_id=$1',[account.rows[0].app_id]),
@@ -77,8 +79,51 @@ export async function registerCustomerRoutes(app:FastifyInstance,secret:string) 
         FROM months ORDER BY m DESC`,[appId]),
       db.query(`SELECT call_type,caller_user_id,callee_user_id,started_at,ended_at,end_reason,ROUND((EXTRACT(EPOCH FROM (COALESCE(ended_at,NOW())-started_at))/60)::numeric,1)::float8 AS minutes
         FROM call_sessions WHERE app_id=$1 ORDER BY started_at DESC LIMIT 20`,[appId]),
+      db.query(`SELECT id::text,month,minutes,note,granted_by,created_at FROM app_bonus_minutes WHERE app_id=$1 AND month=to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM') ORDER BY created_at DESC`,[appId]),
+      db.query(`SELECT actor,action,detail,created_at FROM admin_audit WHERE target=$1 ORDER BY created_at DESC,id DESC LIMIT 30`,[accountId]),
     ]);
-    return {account:account.rows[0],profile:profile.rows[0] || null,payments:payments.rows,total:count.rows[0].total,page,pageSize:25,monthly:monthly.rows,recentCalls:calls.rows,planLimits};
+    return {account:account.rows[0],profile:profile.rows[0] || null,payments:payments.rows,total:count.rows[0].total,page,pageSize:25,monthly:monthly.rows,recentCalls:calls.rows,bonusGrants:bonuses.rows,history:history.rows,planLimits};
+  });
+  const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+  async function findAccount(id:string){
+    if(!uuid.test(id))return null;
+    const r=await getPool()!.query('SELECT c.id,c.email,c.app_id,a.plan,a.subscription_status FROM customer_accounts c JOIN apps a ON a.app_id=c.app_id WHERE c.id=$1',[id]);
+    return r.rows[0] || null;
+  }
+  // Manual plan change (no payment). A later Dodo subscription event can change it again.
+  app.post<{Params:{accountId:string};Body:{plan?:string;reason?:string}}>('/v1/admin/customers/:accountId/plan',async(req,reply)=>{
+    if(!requireAdmin(req,reply))return;
+    if(!getPool())return reply.code(503).send({error:'Database unavailable'});
+    const plan=req.body?.plan,reason=String(req.body?.reason || '').trim().slice(0,300);
+    if(!plan || !Object.hasOwn(BILLING_PLANS,plan))return reply.code(400).send({error:'Choose Free, Starter or Pro.'});
+    if(!reason)return reply.code(400).send({error:'Write a short reason (for the change history).'});
+    const acc=await findAccount(req.params.accountId);if(!acc)return reply.code(404).send({error:'Customer not found'});
+    if(acc.plan===plan)return reply.code(400).send({error:'The customer is already on this plan.'});
+    await setAppPlan(acc.app_id,plan as any);
+    await audit(adminIdentity(req)!.email,'plan.change',acc.id,{email:acc.email,from:acc.plan,to:plan,reason});
+    return {plan};
+  });
+  app.post<{Params:{accountId:string};Body:{minutes?:unknown;note?:string}}>('/v1/admin/customers/:accountId/bonus-minutes',async(req,reply)=>{
+    if(!requireAdmin(req,reply))return;
+    const db=getPool();if(!db)return reply.code(503).send({error:'Database unavailable'});
+    const minutes=Number(req.body?.minutes),note=String(req.body?.note || '').trim().slice(0,300);
+    if(!Number.isInteger(minutes) || minutes<1 || minutes>1000000)return reply.code(400).send({error:'Enter whole minutes between 1 and 1,000,000.'});
+    if(!note)return reply.code(400).send({error:'Write a short reason (for the change history).'});
+    const acc=await findAccount(req.params.accountId);if(!acc)return reply.code(404).send({error:'Customer not found'});
+    const who=adminIdentity(req)!.email;
+    const r=await db.query(`INSERT INTO app_bonus_minutes(app_id,month,minutes,note,granted_by) VALUES ($1,to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM'),$2,$3,$4) RETURNING id::text,month`,[acc.app_id,minutes,note,who]);
+    await audit(who,'minutes.add',acc.id,{email:acc.email,minutes,month:r.rows[0].month,note});
+    return {id:r.rows[0].id,month:r.rows[0].month,minutes};
+  });
+  app.delete<{Params:{accountId:string;grantId:string}}>('/v1/admin/customers/:accountId/bonus-minutes/:grantId',async(req,reply)=>{
+    if(!requireAdmin(req,reply))return;
+    const db=getPool();if(!db)return reply.code(503).send({error:'Database unavailable'});
+    if(!/^\d{1,18}$/.test(req.params.grantId))return reply.code(400).send({error:'Invalid grant'});
+    const acc=await findAccount(req.params.accountId);if(!acc)return reply.code(404).send({error:'Customer not found'});
+    const r=await db.query('DELETE FROM app_bonus_minutes WHERE id=$1 AND app_id=$2 RETURNING minutes,month',[req.params.grantId,acc.app_id]);
+    if(!r.rowCount)return reply.code(404).send({error:'Grant not found'});
+    await audit(adminIdentity(req)!.email,'minutes.remove',acc.id,{email:acc.email,minutes:r.rows[0].minutes,month:r.rows[0].month});
+    return {removed:true};
   });
   app.get('/v1/admin/overview',async(req,reply)=>{
     if(!requireAdmin(req,reply))return;

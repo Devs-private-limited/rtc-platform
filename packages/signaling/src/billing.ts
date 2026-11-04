@@ -81,7 +81,20 @@ export async function getBillingSummary(
   return computeBillingSummary(appId, plan, usage, {
     from: opts.from ?? null,
     to: opts.to ?? null,
-  });
+  }, await getBonusMinutes(appId, opts.from));
+}
+
+/** Extra minutes an admin gave this project for the month of `from` (default: this month, UTC). */
+export async function getBonusMinutes(appId: string, from?: string) {
+  const db = getPool();
+  if (!db) return 0;
+  const month = (from ? new Date(from) : new Date()).toISOString().slice(0, 7);
+  try {
+    const r = await db.query("SELECT COALESCE(SUM(minutes),0)::int AS total FROM app_bonus_minutes WHERE app_id = $1 AND month = $2", [appId, month]);
+    return Number(r.rows[0]?.total ?? 0);
+  } catch {
+    return 0; // table not migrated yet
+  }
 }
 
 export async function maybeDispatchBillingAlert(

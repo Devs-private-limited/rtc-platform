@@ -4,6 +4,11 @@ import { api, adminLogin, getAdminSession, setAdminSession, type AppRecord } fro
 import { renderCustomerList, renderCustomerDetail, escapeHtml } from './customers';
 import { renderOverviewPage } from './overview';
 import { renderPaymentsPage } from './payments';
+import { renderPlansPage } from './plans';
+import { renderTeamPage } from './team';
+import { renderHistoryPage } from './history';
+import { me, ROLE_NAMES } from './me';
+import { adminFetch } from './api';
 
 const root = document.getElementById("app")!;
 // The page area inside the admin shell; the developer-tool screens below draw into it.
@@ -57,6 +62,7 @@ function renderLogin() {
       await adminLogin((document.getElementById("admin-email") as HTMLInputElement).value.trim(), (document.getElementById("admin-password") as HTMLInputElement).value);
       await loadEventTypes();
       if (!location.hash || location.hash === "#/") location.hash = "#/overview";
+      await loadMe();
       renderShell();
     } catch (e) {
       err.textContent = e instanceof Error ? e.message : "Sign-in failed";
@@ -484,6 +490,9 @@ const NAV = [
   ["customers", "Customers"],
   ["payments", "Payments"],
   ["enquiries", "Enquiries"],
+  ["plans", "Plans & prices"],
+  ["team", "Admin team"],
+  ["history", "Change history"],
   ["projects", "Projects (dev tools)"],
 ] as const;
 
@@ -501,7 +510,7 @@ function renderShell() {
       <aside class="side">
         <a class="side-brand" href="#/overview"><span aria-hidden="true">&#8767;</span>RTCExpress<em>Admin</em></a>
         <nav>${NAV.map(([id, label]) => `<a href="#/${id}" data-nav="${id}">${label}</a>`).join("")}</nav>
-        <div class="side-foot"><span id="side-user"></span><button class="side-out" id="side-out">Sign out</button></div>
+        <div class="side-foot"><div class="side-user"><strong>${me.email.replace(/[<>&"']/g, "")}</strong><span>${ROLE_NAMES[me.role]}</span></div><button class="side-out" id="side-out">Sign out</button></div>
       </aside>
       <main id="view" class="view"></main>
     </div>`;
@@ -521,11 +530,18 @@ function route() {
   if (section === "customers") return void renderCustomerList(view);
   if (section === "payments") return void renderPaymentsPage(view);
   if (section === "enquiries") return renderEnquiries(view);
+  if (section === "plans") return void renderPlansPage(view);
+  if (section === "team") return void renderTeamPage(view);
+  if (section === "history") return void renderHistoryPage(view);
   if (section === "projects") { selectedApp = null; return void renderHome(); }
   return void renderOverviewPage(view);
 }
 
 window.addEventListener("hashchange", route);
+
+async function loadMe() {
+  Object.assign(me, await adminFetch<{ email: string; role: typeof me.role }>("/v1/admin/me"));
+}
 
 async function boot() {
   if (!getAdminSession()) {
@@ -534,7 +550,7 @@ async function boot() {
   }
   try {
     await loadEventTypes();
-    await api.listApps();
+    await loadMe();
     renderShell();
   } catch {
     renderLogin();
