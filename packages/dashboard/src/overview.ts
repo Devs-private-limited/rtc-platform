@@ -48,9 +48,11 @@ export async function renderOverviewPage(view: HTMLElement) {
       try {
         const r = await adminFetch<any>('/v1/admin/weekly-summary/send', { method: 'POST', body: '{}' });
         msg.textContent = r.result === 'sent' ? `Sent to ${r.recipients.join(', ')}. Check the inbox (and Spam).` : r.result === 'not-configured' ? 'Not sent: email is not set up on the server.' : 'The email could not be sent. Try again later.';
-        if (r.result !== 'sent') msg.className = 'm-msg error';
-      } catch (e) { msg.className = 'm-msg error'; msg.textContent = e instanceof Error ? e.message : 'Could not send'; }
-      sendNow.disabled = false;
+        if (r.result !== 'sent') { msg.className = 'm-msg error'; sendNow.disabled = false; return; }
+        // Sent: keep the button off for 10 minutes (the server enforces this too).
+        msg.textContent += ' You can send it again in 10 minutes.';
+        setTimeout(() => { sendNow.disabled = false; }, 10 * 60 * 1000);
+      } catch (e) { msg.className = 'm-msg error'; msg.textContent = e instanceof Error ? e.message : 'Could not send'; sendNow.disabled = false; }
     };
     view.querySelector<HTMLButtonElement>('#ov-refresh')!.onclick = () => void renderOverviewPage(view);
   } catch (e) {
@@ -67,6 +69,9 @@ const GROUPS: [key: string, title: string, tip: string, tone: string][] = [
   ['notVerified', 'Email not verified', 'More than 3 days and still not verified. They may have typed a wrong email or missed the message.', 'info'],
 ];
 
+// Customers-page filters that show the complete list for a group.
+const FULL_LIST: Record<string, string> = { notVerified: '#/customers?email=unverified', neverUsed: '#/customers?activity=never' };
+
 function attentionSection(att: any) {
   if (!att) return '';
   const total = GROUPS.reduce((n, [k]) => n + (att[k]?.length || 0), 0);
@@ -75,8 +80,8 @@ function attentionSection(att: any) {
     <div class="att-card ${tone}">
       <div class="att-head"><h3>${esc(title)}</h3><span class="att-count">${att[k].length}</span></div>
       <p class="note">${esc(tip)}</p>
-      <ul>${att[k].slice(0, 6).map((i: any) => `<li><a class="att-row" href="#/customers/${esc(i.accountId)}"><span><strong>${esc(i.name || i.email)}</strong>${i.name ? `<span class="sub">${esc(i.email)}</span>` : ''}<span class="sub">${esc(i.why)}</span></span>${planBadge(i.plan)}</a></li>`).join('')}</ul>
-      ${att[k].length > 6 ? `<p class="note">+ ${att[k].length - 6} more</p>` : ''}
+      <ul class="att-list">${att[k].map((i: any) => `<li><a class="att-row" href="#/customers/${esc(i.accountId)}"><span><strong>${esc(i.name || i.email)}</strong>${i.name ? `<span class="sub">${esc(i.email)}</span>` : ''}<span class="sub">${esc(i.why)}</span></span>${planBadge(i.plan)}</a></li>`).join('')}</ul>
+      ${att[k].length > 5 ? `<p class="note att-more">${att[k].length >= 20 ? 'Newest 20 shown' : `All ${att[k].length} shown`}: scroll inside the box.${FULL_LIST[k] ? ` <a href="${FULL_LIST[k]}">See everyone</a>` : ''}</p>` : ''}
     </div>`).join('');
   return `<section class="panel attention"><div class="panel-head"><h2>Needs attention <span class="att-total">${total}</span></h2></div><div class="att-grid">${cards}</div></section>`;
 }

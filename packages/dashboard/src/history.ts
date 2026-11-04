@@ -22,13 +22,48 @@ function describe(e: any, d: any) {
   }
 }
 
+const KINDS: [string, string][] = [['all', 'All changes'], ['plan', 'Plan changes'], ['minutes', 'Extra minutes'], ['account', 'Block / unblock / delete'], ['team', 'Admin team'], ['summary', 'Summary emails']];
+const state = { q: '', kind: 'all', page: 1 };
+
 export async function renderHistoryPage(view: HTMLElement) {
-  view.innerHTML = pageHeader('Change history', 'Every change made in this admin panel: who did it, what, and when. Nothing here can be edited or deleted.') + '<div class="loading">Loading…</div>';
+  view.innerHTML = pageHeader('Change history', 'Every change made in this admin panel: who did it, what, and when. Nothing here can be edited or deleted.') +
+    `<section class="panel">
+      <form id="hist-filter" class="toolbar">
+        <input name="q" type="search" maxlength="200" placeholder="Search admin, customer email or reason" value="${esc(state.q)}" aria-label="Search">
+        <label>Type<select name="kind">${KINDS.map(([v, l]) => `<option value="${v}"${state.kind === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+        <button type="submit">Search</button>
+        ${state.q || state.kind !== 'all' ? '<button type="button" class="secondary" id="hist-clear">Clear</button>' : ''}
+      </form>
+      <p id="hist-status" class="note" role="status">Loading…</p>
+      <div id="hist-table"></div>
+      <div class="pager"><button class="secondary" id="hist-prev">← Previous</button><span id="hist-page"></span><button class="secondary" id="hist-next">Next →</button></div>
+    </section>`;
+  const form = view.querySelector<HTMLFormElement>('#hist-filter')!;
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const f = new FormData(form);
+    Object.assign(state, { q: String(f.get('q') || '').trim(), kind: String(f.get('kind') || 'all'), page: 1 });
+    void renderHistoryPage(view);
+  };
+  const clear = view.querySelector<HTMLButtonElement>('#hist-clear');
+  if (clear) clear.onclick = () => { Object.assign(state, { q: '', kind: 'all', page: 1 }); void renderHistoryPage(view); };
+  const prev = view.querySelector<HTMLButtonElement>('#hist-prev')!, next = view.querySelector<HTMLButtonElement>('#hist-next')!;
+  prev.onclick = () => { state.page--; void renderHistoryPage(view); };
+  next.onclick = () => { state.page++; void renderHistoryPage(view); };
+  prev.disabled = next.disabled = true;
+  const status = view.querySelector<HTMLElement>('#hist-status')!;
   try {
-    const data = await adminFetch<any>('/v1/admin/audit?limit=200');
-    view.querySelector('.loading')!.outerHTML = `<section class="panel">${dataTable(['When', 'Who', 'What happened'],
-      data.entries.map((e: any) => [when(e.created_at), esc(e.actor), `<span class="wrap">${describeChange(e)}</span>`]), 'No changes yet.')}</section>`;
+    const data = await adminFetch<any>(`/v1/admin/audit?${new URLSearchParams({ q: state.q, kind: state.kind, page: String(state.page) })}`);
+    const from = data.total ? (data.page - 1) * data.pageSize + 1 : 0, to = Math.min(data.page * data.pageSize, data.total);
+    status.textContent = data.total ? `Showing ${from}–${to} of ${data.total.toLocaleString('en-IN')} changes` : '';
+    view.querySelector('#hist-table')!.innerHTML = dataTable(['When', 'Who', 'What happened'],
+      data.entries.map((e: any) => [when(e.created_at), esc(e.actor), `<span class="wrap">${describeChange(e)}</span>`]),
+      state.q || state.kind !== 'all' ? 'No changes match this search.' : 'No changes yet.');
+    prev.disabled = state.page <= 1;
+    next.disabled = state.page * data.pageSize >= data.total;
+    view.querySelector('#hist-page')!.textContent = `Page ${state.page} of ${Math.max(1, Math.ceil(data.total / data.pageSize))}`;
   } catch (e) {
-    view.querySelector('.loading')!.outerHTML = `<div class="error">${esc(e instanceof Error ? e.message : 'Could not load history')}</div>`;
+    status.className = 'error';
+    status.textContent = e instanceof Error ? e.message : 'Could not load history';
   }
 }

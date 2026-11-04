@@ -528,3 +528,7 @@ a.kpi-link:hover{border-color:var(--rx-teal);box-shadow:0 2px 10px #087e7215;bac
 .att-row:hover{border-color:var(--rx-teal);background:#F6FAF8;color:var(--rx-ink)}
 .att-row .sub{display:block}
 .attention.ok .all-good{color:#17633F;font-weight:600}
+
+/* Needs attention: long lists scroll inside their card instead of stretching the page. */
+.att-card ul.att-list{max-height:290px;overflow-y:auto;overscroll-behavior:contain;padding-right:4px}
+.att-more{margin:8px 0 0;font-size:12px}

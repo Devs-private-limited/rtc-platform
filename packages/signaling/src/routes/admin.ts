@@ -82,6 +82,9 @@ export function requireAdmin(req: FastifyRequest, reply: FastifyReply, need?: Ad
   return true;
 }
 
+const AUDIT_PAGE_SIZE = 20;
+const AUDIT_KINDS = ["all", "plan", "minutes", "account", "team", "summary"];
+
 export async function audit(actor: string, action: string, target: string | null, detail: Record<string, unknown> = {}) {
   const db = getPool();
   if (!db) return;
@@ -160,12 +163,22 @@ export async function registerAdminLogin(app: FastifyInstance) {
     return { removed: email };
   });
 
-  app.get<{ Querystring: { limit?: string } }>("/v1/admin/audit", async (req, reply) => {
+  // Change history: search, filter by kind of change, and pages of 20.
+  app.get<{ Querystring: { q?: string; kind?: string; page?: string } }>("/v1/admin/audit", async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
-    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    const q = String(req.query.q || "").trim().slice(0, 200);
+    const kind = String(req.query.kind || "all");
+    const page = Math.max(1, Math.floor(Number(req.query.page) || 1));
+    if (!AUDIT_KINDS.includes(kind)) return reply.code(400).send({ error: "Invalid filter" });
     const db = getPool(); if (!db) return reply.code(503).send({ error: "Database unavailable" });
-    const r = await db.query("SELECT actor, action, target, detail, created_at FROM admin_audit ORDER BY created_at DESC, id DESC LIMIT $1", [limit]);
-    return { entries: r.rows };
+    const where = `($1 = '' OR actor ILIKE $2 OR COALESCE(target, '') ILIKE $2 OR action ILIKE $2 OR detail::text ILIKE $2)
+      AND ($3 = 'all' OR split_part(action, '.', 1) = $3)`;
+    const like = `%${q.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
+    const [rows, count] = await Promise.all([
+      db.query(`SELECT actor, action, target, detail, created_at FROM admin_audit WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT $4 OFFSET $5`, [q, like, kind, AUDIT_PAGE_SIZE, (page - 1) * AUDIT_PAGE_SIZE]),
+      db.query(`SELECT COUNT(*)::int AS n FROM admin_audit WHERE ${where}`, [q, like, kind]),
+    ]);
+    return { entries: rows.rows, total: count.rows[0].n, page, pageSize: AUDIT_PAGE_SIZE };
   });
 }
 
