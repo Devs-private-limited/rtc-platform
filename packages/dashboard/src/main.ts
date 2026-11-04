@@ -1,9 +1,13 @@
 import { renderEnquiries } from "./enquiries";
 import "./style.css";
 import { api, adminLogin, getAdminSession, setAdminSession, type AppRecord } from "./api";
-import { renderCustomers, escapeHtml } from './customers';
+import { renderCustomerList, renderCustomerDetail, escapeHtml } from './customers';
+import { renderOverviewPage } from './overview';
+import { renderPaymentsPage } from './payments';
 
-const app = document.getElementById("app")!;
+const root = document.getElementById("app")!;
+// The page area inside the admin shell; the developer-tool screens below draw into it.
+let app: HTMLElement = root;
 let selectedApp: AppRecord | null = null;
 let activeTab: "overview" | "events" | "webhooks" | "deliveries" | "quality" | "billing" | "quickstart" = "overview";
 let eventTypes: string[] = [];
@@ -13,18 +17,31 @@ function fmtDate(iso: string) {
 }
 
 function renderLogin() {
-  app.innerHTML = `
-    <div class="login-wrap"><section class="card login-card">
-      <h1>Admin sign-in</h1>
-      <p class="muted">Use your RTCExpress console email and password. Only admin accounts can sign in here.</p>
-      <form id="login-form">
-        <label>Email<input id="admin-email" type="email" autocomplete="username" required /></label>
-        <label>Password<input id="admin-password" type="password" autocomplete="current-password" required /></label>
-        <button id="login-btn" type="submit">Sign in</button>
-      </form>
-      <div id="login-error" class="error" role="alert"></div>
-      <p class="muted" style="margin-top:16px;font-size:14px">Forgot the password? Reset it from the <a href="https://rtc.devsquarelabs.com/#/account" target="_blank" rel="noopener">console sign-in page</a>.</p>
-    </section></div>
+  app = root;
+  document.body.classList.add("shell-on");
+  root.innerHTML = `
+    <div class="login-page">
+      <section class="login-card">
+        <div class="login-brand"><span aria-hidden="true">&#8767;</span>RTCExpress <em>Admin</em></div>
+        <h1>Sign in to the admin panel</h1>
+        <p class="muted">For the RTCExpress team only. Customers use the <a href="https://rtc.devsquarelabs.com/#/login" target="_blank" rel="noopener">console</a>.</p>
+        <form id="login-form">
+          <label>Email<input id="admin-email" type="email" autocomplete="username" required /></label>
+          <label>Password<input id="admin-password" type="password" autocomplete="current-password" required /></label>
+          <button id="login-btn" type="submit">Sign in</button>
+        </form>
+        <div id="login-error" class="error" role="alert"></div>
+        <div class="login-help">
+          <strong>How admin access works</strong>
+          <ol>
+            <li>Use the email and password of a normal RTCExpress console account. No console account yet? <a href="https://rtc.devsquarelabs.com/#/signup" target="_blank" rel="noopener">Sign up</a> first.</li>
+            <li>That email must also be on the server’s admin list (<code>ADMIN_EMAILS</code> on the VM). Nobody can add themselves; only the owner can, on the server.</li>
+            <li>Forgot the password? <a href="https://rtc.devsquarelabs.com/#/account" target="_blank" rel="noopener">Reset it here</a>.</li>
+          </ol>
+          <p class="muted">For security, a wrong password and an email that isn’t an admin both show the same message.</p>
+        </div>
+      </section>
+    </div>
   `;
 
   const form = document.getElementById("login-form") as HTMLFormElement;
@@ -39,7 +56,8 @@ function renderLogin() {
     try {
       await adminLogin((document.getElementById("admin-email") as HTMLInputElement).value.trim(), (document.getElementById("admin-password") as HTMLInputElement).value);
       await loadEventTypes();
-      renderHome();
+      if (!location.hash || location.hash === "#/") location.hash = "#/overview";
+      renderShell();
     } catch (e) {
       err.textContent = e instanceof Error ? e.message : "Sign-in failed";
       btn.disabled = false;
@@ -82,13 +100,7 @@ async function renderHome() {
   }
 
   app.innerHTML = `
-    <header class="top">
-      <div>
-        <h1>RTCExpress Administration</h1>
-        <p>Projects & developer tools</p>
-      </div>
-      <div class="row"><button id="enquiries-btn">Customer enquiries</button><button id="customers-btn">Customers & payments</button><button class="secondary" id="logout-btn">Sign out</button></div>
-    </header>
+    <header class="page-head"><div><h1>Projects</h1><p>Every RTC project on the server, including demo and admin-made ones. Open one for events, call quality, plan, webhooks and code.</p></div></header>
     <section class="card">
       <h2>Projects</h2>
       ${error ? `<div class="error">${escapeHtml(error)}</div>` : ""}
@@ -118,14 +130,6 @@ async function renderHome() {
       <p class="muted">RTC demo: <a href="${import.meta.env.DEV ? "http://localhost:5180" : "/demo/"}" target="_blank">open demo</a> · Signaling: ${window.location.origin}</p>
     </section>
   `;
-
-  document.getElementById("logout-btn")!.onclick = () => {
-    setAdminSession("");
-    selectedApp = null;
-    renderLogin();
-  };
-  document.getElementById('enquiries-btn')!.onclick=()=>renderEnquiries(app,()=>void renderHome(),()=>{setAdminSession('');selectedApp=null;renderLogin();});
-  document.getElementById('customers-btn')!.onclick=()=>renderCustomers(app,()=>void renderHome(),()=>{setAdminSession('');selectedApp=null;renderLogin();});
 
   document.querySelectorAll(".app-item").forEach((el) => {
     el.addEventListener("click", () => {
@@ -171,7 +175,6 @@ async function renderAppDetail() {
       </div>
       <div class="row">
         <button class="secondary" id="back-btn">← Projects</button>
-        <button class="secondary" id="logout-btn">Sign out</button>
       </div>
     </header>
     <div class="tabs">
@@ -185,11 +188,6 @@ async function renderAppDetail() {
   document.getElementById("back-btn")!.onclick = () => {
     selectedApp = null;
     renderHome();
-  };
-  document.getElementById("logout-btn")!.onclick = () => {
-    setAdminSession("");
-    selectedApp = null;
-    renderLogin();
   };
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -516,6 +514,54 @@ await rtc.callUser("user_456");</pre>
   `;
 }
 
+const NAV = [
+  ["overview", "Overview"],
+  ["customers", "Customers"],
+  ["payments", "Payments"],
+  ["enquiries", "Enquiries"],
+  ["projects", "Projects (dev tools)"],
+] as const;
+
+function signOut() {
+  setAdminSession("");
+  selectedApp = null;
+  location.hash = "";
+  renderLogin();
+}
+
+function renderShell() {
+  document.body.classList.add("shell-on");
+  root.innerHTML = `
+    <div class="shell">
+      <aside class="side">
+        <a class="side-brand" href="#/overview"><span aria-hidden="true">&#8767;</span>RTCExpress<em>Admin</em></a>
+        <nav>${NAV.map(([id, label]) => `<a href="#/${id}" data-nav="${id}">${label}</a>`).join("")}</nav>
+        <div class="side-foot"><span id="side-user"></span><button class="side-out" id="side-out">Sign out</button></div>
+      </aside>
+      <main id="view" class="view"></main>
+    </div>`;
+  app = root.querySelector<HTMLElement>("#view")!;
+  root.querySelector<HTMLButtonElement>("#side-out")!.onclick = signOut;
+  route();
+}
+
+function route() {
+  const view = root.querySelector<HTMLElement>("#view");
+  if (!view) return;
+  app = view;
+  const [section = "overview", id] = location.hash.replace(/^#\/?/, "").split("/");
+  root.querySelectorAll<HTMLElement>("[data-nav]").forEach((a) => a.classList.toggle("on", a.dataset.nav === section));
+  window.scrollTo(0, 0);
+  if (section === "customers" && id) return void renderCustomerDetail(view, decodeURIComponent(id));
+  if (section === "customers") return void renderCustomerList(view);
+  if (section === "payments") return void renderPaymentsPage(view);
+  if (section === "enquiries") return renderEnquiries(view);
+  if (section === "projects") { selectedApp = null; return void renderHome(); }
+  return void renderOverviewPage(view);
+}
+
+window.addEventListener("hashchange", route);
+
 async function boot() {
   if (!getAdminSession()) {
     renderLogin();
@@ -524,7 +570,7 @@ async function boot() {
   try {
     await loadEventTypes();
     await api.listApps();
-    renderHome();
+    renderShell();
   } catch {
     renderLogin();
   }

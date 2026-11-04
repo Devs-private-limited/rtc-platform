@@ -35,6 +35,9 @@ export async function createCustomerAccount(input: {
   password: string;
   name?: string;
   company?: string;
+  signupIp?: string;
+  signupUserAgent?: string;
+  signupSource?: string;
 }) {
   const db = getPool();
   if (!db) throw new Error("Database not configured");
@@ -61,10 +64,10 @@ export async function createCustomerAccount(input: {
 
   try {
     const result = await db.query(
-      `INSERT INTO customer_accounts (email, password_hash, name, company, app_id)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO customer_accounts (email, password_hash, name, company, app_id, signup_ip, signup_user_agent, signup_source)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, created_at`,
-      [email, passwordHash, name, company, appId]
+      [email, passwordHash, name, company, appId, input.signupIp?.slice(0, 64) || null, input.signupUserAgent?.slice(0, 400) || null, input.signupSource?.trim().slice(0, 400) || null]
     );
 
     return {

@@ -18,6 +18,7 @@ test('admin customer reporting and customer-owned business profiles',async t=>{
   await pg.exec('ALTER TABLE customer_accounts ADD COLUMN email_verified_at TIMESTAMPTZ');
   const migration=await readFile(new URL('../migrations/017_customer_reporting.sql',import.meta.url),'utf8');await pg.exec(migration);await pg.exec(migration);
   await pg.exec(await readFile(new URL('../migrations/020_billing_payments.sql',import.meta.url),'utf8'));
+  for(const m of ['002_events_and_webhooks','003_call_sessions','008_media_sessions','009_messages','010_call_session_end_reason','018_call_session_type','021_signup_source'])await pg.exec(await readFile(new URL(`../migrations/${m}.sql`,import.meta.url),'utf8'));
   const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222';
   await pg.query(`INSERT INTO customer_accounts(id,email,password_hash,name,company,app_id) VALUES ($1,'first@example.test','SENSITIVE-HASH','First','Original business','app-a'),($2,'second@example.test','OTHER-HASH','Second',NULL,'app-b')`,[a,b]);
   t.mock.method(getPool()!,'query',async(sql:string,args?:unknown[])=>{const result=await pg.query(sql,args);return {...result,rowCount:result.rows.length || result.affectedRows};});
@@ -65,5 +66,29 @@ test('admin customer reporting and customer-owned business profiles',async t=>{
     assert.equal((await app.inject({url:'/v1/admin/customers/------------------------------------',headers:admin})).statusCode,400);
     assert.equal((await app.inject({url:'/v1/admin/customers?q=%27%20OR%201%3D1',headers:admin})).json().total,0);
     assert.equal((await app.inject({url:`/v1/admin/customers/${a}`,method:'POST',headers:admin,payload:{status:'paid'}})).statusCode,404);
+  });
+  await t.test('usage: participant minutes (1:1 x2, group per person), messages, sort, plan filter and overview',async()=>{
+    // 10-minute 1:1 call = 20 participant minutes; 3 people x 5 minutes in a group room = 15; plus a demo app that is not a customer.
+    await pg.exec(`INSERT INTO call_sessions(app_id,call_id,room_id,caller_user_id,callee_user_id,call_type,started_at,ended_at) VALUES
+        ('app-b','c1','r','u1','u2','voice',NOW()-interval '20 minutes',NOW()-interval '10 minutes'),
+        ('demo','d1','r','x','y','voice',NOW()-interval '6 minutes',NOW()-interval '1 minute');
+      INSERT INTO media_sessions(app_id,room_id,user_id,kind,joined_at,left_at) VALUES
+        ('app-b','g','u1','voice',NOW()-interval '5 minutes',NOW()),('app-b','g','u2','voice',NOW()-interval '5 minutes',NOW()),('app-b','g','u3','voice',NOW()-interval '5 minutes',NOW());
+      INSERT INTO messages(app_id,room_id,from_user_id,text) VALUES ('app-b','r','u1','hi'),('app-b','r','u2','hello');
+      INSERT INTO events(app_id,type,user_id) VALUES ('app-b','message.sent','u1'),('app-a','user.joined','__portal__');`);
+    const list=(await app.inject({url:'/v1/admin/customers?sort=minutes_month',headers:admin})).json();
+    const b0=list.customers[0];assert.equal(b0.id,b);assert.equal(Math.round(b0.minutes_month),35);assert.equal(Math.round(b0.minutes_total),35);
+    assert.equal(b0.messages_total,2);assert.equal(b0.calls_total,1);assert.ok(b0.last_active_at);
+    assert.equal(list.customers[1].minutes_total,0);assert.equal(list.customers[1].last_active_at,null,'console visits are not app activity');
+    assert.equal(list.planLimits.free.callMinutes,2000);
+    assert.equal((await app.inject({url:'/v1/admin/customers?plan=pro',headers:admin})).json().total,1);
+    assert.equal((await app.inject({url:'/v1/admin/customers?sort=drop',headers:admin})).statusCode,400);
+    const detail=(await app.inject({url:`/v1/admin/customers/${b}`,headers:admin})).json();
+    assert.equal(detail.monthly.length,6);assert.equal(Math.round(detail.monthly[0].minutes),35);assert.equal(detail.recentCalls.length,1);assert.ok('signup_ip' in detail.account);
+    const o=(await app.inject({url:'/v1/admin/overview',headers:admin})).json();
+    assert.equal(o.customers,2);assert.equal(Math.round(o.customer_minutes_month),35);assert.equal(Math.round(o.other_minutes_month),10);
+    assert.equal(o.customer_messages_month,2);assert.equal(o.active_30_days,1);assert.deepEqual(o.plans,{free:1,pro:1});assert.equal(o.recentSignups.length,2);
+    const pays=(await app.inject({url:'/v1/admin/payments',headers:admin})).json();assert.equal(pays.total,4);assert.equal(pays.payments[0].email!==undefined,true);
+    for(const url of ['/v1/admin/overview','/v1/admin/payments'])assert.equal((await app.inject({url,headers:portal()})).statusCode,401);
   });
 });

@@ -1,55 +1,128 @@
 import { adminFetch } from './api';
+import { ago, dataTable, device, esc, kpis, minutes, money, num, pageHeader, planBadge, usageBar, when, yesNo } from './ui';
 
-export const escapeHtml=(value:unknown)=>String(value ?? '').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]!));
-const date=(value:unknown)=>value?escapeHtml(new Date(String(value)).toLocaleString()):'—';
-// Integer minor units (cents/paise) -> formatted decimal, without rounding large totals via Number.
-function money(value:unknown,currency:unknown='USD'){const n=BigInt(String(value || 0));const c=String(currency || 'USD').toUpperCase();const sym=c==='USD'?'$':c==='INR'?'₹':`${c} `;return `${sym}${(n/100n).toLocaleString('en-IN')}.${String(n%100n).padStart(2,'0')}`;}
-// Plan + subscription state in one readable line, e.g. "pro · yearly · active · renews 5/11/2027".
-function planLine(c:any){const parts=[c.plan,c.billing_period,c.subscription_status].filter(Boolean).map(String);
-  if(c.subscription_renews_at)parts.push(`${c.subscription_cancel_at_period_end?'ends':'renews'} ${new Date(c.subscription_renews_at).toLocaleDateString()}`);return parts.join(' · ');}
-const table=(headers:string[],rows:string[][])=>`<div class="customer-table"><table><thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr>${row.map(v=>`<td>${v}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${headers.length}">No records found.</td></tr>`}</tbody></table></div>`;
+// Kept for older imports (enquiries.ts).
+export const escapeHtml = esc;
 
-export function renderCustomers(root:HTMLElement,onBack:()=>void,onLogout:()=>void){
-  root.innerHTML=`<header class="top"><div><h1>Customers & payments</h1><p>Admin only · Registered accounts and verified payment records</p></div><div class="row"><button id="customers-back" class="secondary">Projects</button><button id="customers-logout" class="secondary">Sign out</button></div></header>
-    <section class="card"><p>Payments come from Dodo Payments webhooks. Only succeeded payments count toward totals; refunds are subtracted. Amounts are in the currency the customer paid. Check the Dodo dashboard for payouts and fees.</p></section>
-    <section class="card"><h2>All-time totals</h2><div id="customer-summary" class="customer-summary"></div></section>
-    <section class="card"><form id="customer-search" class="row"><input name="q" maxlength="200" placeholder="Search name, email, business or App ID" aria-label="Search customers"><select name="paid" aria-label="Payment filter"><option value="all">All customers</option><option value="paid">Verified paying customers</option><option value="unpaid">No verified payments</option></select><button>Search</button></form><p id="customer-status" role="status"></p><div id="customer-list"></div><div class="row"><button id="customer-prev" class="secondary">Previous</button><span id="customer-page"></span><button id="customer-next" class="secondary">Next</button></div></section><section id="customer-detail" class="card" hidden></section>`;
-  const summary=root.querySelector<HTMLElement>('#customer-summary')!,status=root.querySelector<HTMLElement>('#customer-status')!,list=root.querySelector<HTMLElement>('#customer-list')!,detail=root.querySelector<HTMLElement>('#customer-detail')!;
-  const form=root.querySelector<HTMLFormElement>('#customer-search')!,prev=root.querySelector<HTMLButtonElement>('#customer-prev')!,next=root.querySelector<HTMLButtonElement>('#customer-next')!;
-  let page=1,q='',paid='all',version=0,detailVersion=0;
-  const active=()=>root.querySelector('#customer-search')===form;
-  root.querySelector<HTMLButtonElement>('#customers-back')!.onclick=onBack;
-  root.querySelector<HTMLButtonElement>('#customers-logout')!.onclick=onLogout;
-  async function openCustomer(id:string,paymentPage=1){
-    const current=++detailVersion;detail.hidden=false;detail.textContent='Loading customer…';
-    try{
-      const data=await adminFetch<any>(`/v1/admin/customers/${encodeURIComponent(id)}?page=${paymentPage}`);
-      if(!active() || current!==detailVersion)return;
-      const c=data.account,p=data.profile;
-      const pairs=[['Name',c.name],['Email',c.email],['Signup company',c.company],['Project',c.project_name],['App ID',c.app_id],['Plan / subscription',planLine(c)],['Dodo subscription ID',c.dodo_subscription_id],['Account status',c.active?'Active':'Inactive'],['Registered',new Date(c.created_at).toLocaleString()],['Email verified',c.email_verified_at?'Yes':'No'],...Object.entries(p || {}).map(([k,v])=>[k.replaceAll('_',' '),v])];
-      detail.innerHTML=`<h2>Customer details</h2><p class="muted">Business information is customer-provided. ${p?'':'No business profile has been submitted yet.'}</p><dl class="customer-profile">${pairs.map(([k,v])=>`<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v || 'Not provided')}</dd></div>`).join('')}</dl><h2>Payment history</h2><p class="muted">From Dodo Payments. Times use your browser's timezone. Refunded amounts are shown separately; gateway fees are not included.</p>
-      ${table(['Payment ID','What','Status','Amount','Refunded','Paid at'],data.payments.map((p:any)=>[escapeHtml(p.payment_id),escapeHtml(p.description || '—'),escapeHtml(p.status),money(p.amount_minor,p.currency),money(p.refunded_minor,p.currency),date(p.paid_at)]))}
-      <div class="row"><button id="payments-prev" class="secondary" ${paymentPage===1?'disabled':''}>Previous payments</button><span>Page ${paymentPage} · ${data.total} records</span><button id="payments-next" class="secondary" ${paymentPage*data.pageSize>=data.total?'disabled':''}>Next payments</button></div>`;
-      detail.querySelector<HTMLButtonElement>('#payments-prev')!.onclick=()=>void openCustomer(id,paymentPage-1);
-      detail.querySelector<HTMLButtonElement>('#payments-next')!.onclick=()=>void openCustomer(id,paymentPage+1);
-      detail.scrollIntoView({behavior:'smooth',block:'start'});
-    }catch(error){if(active() && current===detailVersion)detail.textContent=error instanceof Error?error.message:'Unable to load customer';}
+const state = { q: '', plan: 'all', paid: 'all', sort: 'newest', page: 1 };
+
+function subscriptionText(c: any) {
+  if (!c.plan || c.plan === 'free') return '<span class="dim">No subscription</span>';
+  const parts = [c.billing_period, c.subscription_status].filter(Boolean).map((v: string) => esc(v));
+  if (c.subscription_renews_at) parts.push(`${c.subscription_cancel_at_period_end ? 'ends' : 'renews'} ${new Date(c.subscription_renews_at).toLocaleDateString('en-IN')}`);
+  return parts.join(' · ') || '<span class="dim">—</span>';
+}
+
+export async function renderCustomerList(view: HTMLElement) {
+  view.innerHTML =
+    pageHeader('Customers', 'Everyone who signed up for an RTCExpress console account. Click a row for full details.') +
+    `<section class="panel">
+      <form id="cust-filter" class="toolbar">
+        <input name="q" type="search" maxlength="200" placeholder="Search name, email, company or App ID" value="${esc(state.q)}" aria-label="Search">
+        <label>Plan<select name="plan">${['all', 'free', 'starter', 'pro'].map((v) => `<option value="${v}" ${state.plan === v ? 'selected' : ''}>${v === 'all' ? 'All plans' : v[0].toUpperCase() + v.slice(1)}</option>`).join('')}</select></label>
+        <label>Payments<select name="paid">${[['all', 'Everyone'], ['paid', 'Has paid'], ['unpaid', 'Never paid']].map(([v, l]) => `<option value="${v}" ${state.paid === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label>Sort by<select name="sort">${[['newest', 'Newest sign-up'], ['minutes_month', 'Most minutes this month'], ['minutes_total', 'Most minutes all time'], ['last_active', 'Recently active'], ['paid', 'Most payments']].map(([v, l]) => `<option value="${v}" ${state.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <button type="submit">Apply</button>
+      </form>
+      <p id="cust-status" class="note" role="status">Loading…</p>
+      <div id="cust-table"></div>
+      <div class="pager"><button class="secondary" id="cust-prev">← Previous</button><span id="cust-page"></span><button class="secondary" id="cust-next">Next →</button></div>
+    </section>`;
+  const form = view.querySelector<HTMLFormElement>('#cust-filter')!;
+  const status = view.querySelector<HTMLElement>('#cust-status')!;
+  const tableEl = view.querySelector<HTMLElement>('#cust-table')!;
+  const prev = view.querySelector<HTMLButtonElement>('#cust-prev')!, next = view.querySelector<HTMLButtonElement>('#cust-next')!;
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const f = new FormData(form);
+    Object.assign(state, { q: String(f.get('q') || ''), plan: String(f.get('plan')), paid: String(f.get('paid')), sort: String(f.get('sort')), page: 1 });
+    void renderCustomerList(view);
+  };
+  form.querySelectorAll('select').forEach((s) => (s.onchange = () => form.requestSubmit()));
+  prev.onclick = () => { state.page--; void renderCustomerList(view); };
+  next.onclick = () => { state.page++; void renderCustomerList(view); };
+  prev.disabled = next.disabled = true;
+  try {
+    const { q, plan, paid, sort, page } = state;
+    const data = await adminFetch<any>(`/v1/admin/customers?${new URLSearchParams({ q, plan, paid, sort, page: String(page) })}`);
+    if (!view.contains(form)) return;
+    const limits = data.planLimits || {};
+    const from = data.total ? (page - 1) * data.pageSize + 1 : 0, to = Math.min(page * data.pageSize, data.total);
+    status.textContent = `Showing ${from}–${to} of ${data.total} customers. Minutes are participant minutes (a 1:1 call counts for both people), the same way plan limits count them.`;
+    tableEl.innerHTML = dataTable(
+      ['Customer', 'Plan', 'Email', ['Minutes this month', 'num'], ['Minutes all time', 'num'], ['Messages', 'num'], 'Last active', 'Paid', 'Signed up'],
+      data.customers.map((c: any) => [
+        `<a class="strong" href="#/customers/${esc(c.id)}">${esc(c.name || 'No name given')}</a><div class="sub">${esc(c.email)}</div>${c.company || c.business_name ? `<div class="sub">${esc(c.business_name || c.company)}</div>` : ''}`,
+        planBadge(c.plan),
+        yesNo(!!c.email_verified_at),
+        usageBar(Number(c.minutes_month), limits[c.plan]?.callMinutes),
+        minutes(c.minutes_total),
+        num(c.messages_total),
+        ago(c.last_active_at),
+        Number(c.payment_count) ? `${money(c.total_paid_minor, c.currency)}<div class="sub">${num(c.payment_count)} payment${c.payment_count == 1 ? '' : 's'}</div>` : '<span class="dim">—</span>',
+        `${when(c.created_at, false)}<div class="sub">${ago(c.created_at)}</div>`,
+      ]),
+      'No customers match these filters.',
+      data.customers.map((c: any) => `class="clickable" data-href="#/customers/${esc(c.id)}"`)
+    );
+    tableEl.querySelectorAll<HTMLElement>('tr[data-href]').forEach((tr) => (tr.onclick = (e) => { if (!(e.target as HTMLElement).closest('a')) location.hash = tr.dataset.href!; }));
+    prev.disabled = page === 1;
+    next.disabled = page * data.pageSize >= data.total;
+    view.querySelector('#cust-page')!.textContent = `Page ${page} of ${Math.max(1, Math.ceil(data.total / data.pageSize))}`;
+  } catch (e) {
+    status.innerHTML = `<span class="error">${esc(e instanceof Error ? e.message : 'Could not load customers')}</span>`;
   }
-  async function load(){
-    const current=++version;status.textContent='Loading…';prev.disabled=true;next.disabled=true;list.innerHTML='';summary.textContent='Loading totals…';detail.hidden=true;++detailVersion;
-    try{
-      const data=await adminFetch<any>(`/v1/admin/customers?${new URLSearchParams({q,paid,page:String(page)})}`);
-      if(!active() || current!==version)return;
-      const s=data.summary;
-      const totals=(s.totals || []) as any[];const sum=(key:string)=>totals.length?totals.map(t=>money(t[key],t.currency)).join(' + '):money(0);
-      summary.innerHTML=[['Registered customers',s.registered_customers],['Active subscriptions',s.active_subscriptions],['Paying customers',s.paying_customers],['Successful payments',s.verified_payments],['Gross paid',sum('gross_minor')],['Refunded',sum('refunds_minor')],['Net paid',sum('net_minor')]].map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
-      status.textContent=`${data.total} matching customers. Totals above cover all customers, regardless of filters.`;
-      list.innerHTML=table(['Customer','Business','Plan / subscription','App ID','Signed up','Payments','Total paid','Last paid','Details'],data.customers.map((c:any)=>[`${escapeHtml(c.name || 'Unnamed')}<br>${escapeHtml(c.email)}`,escapeHtml(c.business_name || c.company || 'Not provided'),escapeHtml(planLine(c)),escapeHtml(c.app_id),date(c.created_at),escapeHtml(c.payment_count),money(c.total_paid_minor,c.currency),date(c.last_paid_at),`<button class="secondary" data-customer="${escapeHtml(c.id)}">View details</button>`]));
-      list.querySelectorAll<HTMLButtonElement>('[data-customer]').forEach(button=>button.onclick=()=>void openCustomer(button.dataset.customer!));
-      prev.disabled=page===1;next.disabled=page*data.pageSize>=data.total;
-      root.querySelector('#customer-page')!.textContent=`Page ${page}`;
-    }catch(error){if(active() && current===version){summary.textContent='Totals unavailable';status.textContent=error instanceof Error?error.message:'Unable to load customers';}}
+}
+
+export async function renderCustomerDetail(view: HTMLElement, id: string) {
+  view.innerHTML = '<a class="back" href="#/customers">← All customers</a><div class="loading">Loading customer…</div>';
+  try {
+    const data = await adminFetch<any>(`/v1/admin/customers/${encodeURIComponent(id)}`);
+    const c = data.account, p = data.profile || {};
+    const limit = data.planLimits?.[c.plan]?.callMinutes;
+    const field = (k: string, v: string) => `<div><dt>${esc(k)}</dt><dd>${v || '<span class="dim">Not provided</span>'}</dd></div>`;
+    const sourceKnown = c.signup_ip || c.signup_source || c.signup_user_agent;
+    view.innerHTML =
+      '<a class="back" href="#/customers">← All customers</a>' +
+      pageHeader(c.name || c.email, `${esc(c.email)} · ${planBadge(c.plan)} · signed up ${when(c.created_at)}`) +
+      `<section class="panel"><h2>Usage</h2>${kpis([
+        ['Minutes this month', usageBar(Number(c.minutes_month), limit), limit ? `${data.planLimits[c.plan].name} plan allowance` : ''],
+        ['Minutes all time', minutes(c.minutes_total)],
+        ['Calls (1:1)', num(c.calls_total)],
+        ['Messages', `${num(c.messages_total)}`, `${num(c.messages_month)} this month`],
+        ['Last active in app', ago(c.last_active_at)],
+      ])}
+      <h3>Last 6 months</h3>${dataTable(['Month', ['Call minutes', 'num'], ['Calls', 'num'], ['Messages', 'num']],
+        (data.monthly || []).map((m: any) => [esc(new Date(`${m.month}-01T00:00:00Z`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' })), minutes(m.minutes), num(m.calls), num(m.messages)]))}
+      <h3>Latest calls</h3>${dataTable(['Started', 'Type', 'From → to', ['Length', 'num'], 'Ended because'],
+        (data.recentCalls || []).map((k: any) => [when(k.started_at), esc(k.call_type || 'voice'), `${esc(k.caller_user_id)} → ${esc(k.callee_user_id || '—')}`, k.ended_at ? minutes(k.minutes) : '<span class="pill warn">In progress</span>', esc(k.end_reason || '—')]),
+        'No calls yet.')}</section>` +
+      `<section class="panel"><h2>Account</h2><dl class="facts">
+        ${field('Name', esc(c.name))}${field('Email', esc(c.email))}${field('Email status', yesNo(!!c.email_verified_at))}
+        ${field('Company (at sign-up)', esc(c.company))}${field('Project name', esc(c.project_name))}${field('App ID', `<code>${esc(c.app_id)}</code>`)}
+        ${field('Plan', planBadge(c.plan))}${field('Subscription', subscriptionText(c))}${field('Dodo subscription ID', esc(c.dodo_subscription_id))}
+        ${field('Account', c.active ? '<span class="pill good">Active</span>' : '<span class="pill bad">Disabled</span>')}${field('Signed up', when(c.created_at))}
+      </dl></section>` +
+      `<section class="panel"><h2>Where this sign-up came from</h2>${sourceKnown
+        ? `<dl class="facts">
+          ${field('IP address', c.signup_ip ? `<code>${esc(c.signup_ip)}</code> · <a href="https://ipinfo.io/${encodeURIComponent(c.signup_ip)}" target="_blank" rel="noopener noreferrer">look up location ↗</a>` : '')}
+          ${field('Device', esc(device(c.signup_user_agent)))}
+          ${field('Came from', esc(c.signup_source))}
+          ${field('Browser details', `<span class="sub">${esc(c.signup_user_agent)}</span>`)}</dl>`
+        : `<p class="note">Not recorded. Sign-up tracking started on 4 Nov 2026, so accounts made before that only have the email, name and date above. Their app usage (above) still shows whether they really built something.</p>`}</section>` +
+      `<section class="panel"><h2>Business profile</h2>${data.profile
+        ? `<dl class="facts">${Object.entries(p).filter(([k]) => k !== 'updated_at').map(([k, v]) => field(k.replaceAll('_', ' '), esc(v))).join('')}</dl>`
+        : '<p class="note">The customer has not filled in a business profile.</p>'}</section>` +
+      `<section class="panel"><h2>Payments</h2>${dataTable(['Paid at', 'What', 'Status', ['Amount', 'num'], ['Refunded', 'num'], 'Payment ID'],
+        data.payments.map((x: any) => [when(x.paid_at), esc(x.description || '—'), statusPill(x.status), money(x.amount_minor, x.currency), money(x.refunded_minor, x.currency), `<code>${esc(x.payment_id)}</code>`]),
+        'No payments yet.')}</section>`;
+  } catch (e) {
+    view.querySelector('.loading')!.outerHTML = `<div class="error">${esc(e instanceof Error ? e.message : 'Could not load the customer')}</div>`;
   }
-  form.onsubmit=event=>{event.preventDefault();const values=new FormData(form);q=String(values.get('q') || '');paid=String(values.get('paid') || 'all');page=1;void load();};
-  prev.onclick=()=>{page--;void load();};next.onclick=()=>{page++;void load();};void load();
+}
+
+export function statusPill(status: unknown) {
+  const s = String(status || '');
+  const tone = s === 'succeeded' ? 'good' : s === 'failed' || s === 'cancelled' ? 'bad' : 'warn';
+  return `<span class="pill ${tone}">${esc(s || 'unknown')}</span>`;
 }

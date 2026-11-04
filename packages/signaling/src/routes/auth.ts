@@ -19,9 +19,16 @@ function portalSession(account: { appId: string; appName: string; email: string;
   return { token, expiresIn: PORTAL_TOKEN_TTL_SEC };
 }
 
+// Caddy sets X-Forwarded-For to the real visitor address; without a proxy fall back to the socket address.
+function clientIp(req: { headers: Record<string, unknown>; ip: string }) {
+  const forwarded = req.headers["x-forwarded-for"];
+  const first = typeof forwarded === "string" ? forwarded.split(",")[0].trim() : "";
+  return first || req.ip;
+}
+
 export async function registerAuthRoutes(app: FastifyInstance, jwtSecret: string) {
   app.post<{
-    Body: { email?: string; password?: string; name?: string; company?: string };
+    Body: { email?: string; password?: string; name?: string; company?: string; source?: string };
   }>("/v1/auth/signup", async (req, reply) => {
     if (!rateLimit(`auth-signup:${req.ip}`, AUTH_LIMIT, AUTH_WINDOW_MS)) {
       return reply.status(429).send({ error: "Too many signup attempts. Try again later." });
@@ -39,6 +46,9 @@ export async function registerAuthRoutes(app: FastifyInstance, jwtSecret: string
         password,
         name: req.body?.name,
         company: req.body?.company,
+        signupIp: clientIp(req),
+        signupUserAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : undefined,
+        signupSource: typeof req.body?.source === "string" ? req.body.source : undefined,
       });
       // Send the "verify your email" link right away. Signup must not fail or wait if the email
       // provider is slow or down; the customer can request a new link from Account access.
