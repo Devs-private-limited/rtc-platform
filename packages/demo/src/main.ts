@@ -81,9 +81,9 @@ function createPanel(config: PanelConfig) {
       <label class="mode-label">
         Media
         <select class="media-mode">
-          <option value="auto" selected>Auto (SFU if available)</option>
+          <option value="p2p" selected>P2P (1:1 calls)</option>
+          <option value="auto">Auto (SFU if available)</option>
           <option value="sfu">SFU</option>
-          <option value="p2p">P2P</option>
         </select>
       </label>
     </div>

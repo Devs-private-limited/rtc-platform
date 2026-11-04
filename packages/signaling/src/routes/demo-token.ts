@@ -46,6 +46,10 @@ export async function registerDemoTokenRoutes(app: FastifyInstance, deps: DemoTo
       const roomId = req.body?.roomId?.trim() || "";
       const room = classifyDemoRoom(roomId);
       if (room.kind === "invalid") {
+        // Web demo rooms start with "test-"; anything else is an old mobile app build.
+        if (roomId.startsWith("test-")) {
+          return reply.status(400).send({ error: "Invalid room name. Use test- followed by 8 to 64 letters or numbers, or open a new test room." });
+        }
         return reply.status(400).send({ error: "This demo app version is out of date. Please install the latest demo app." });
       }
       if (room.kind === "pair") {
