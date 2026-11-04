@@ -26,17 +26,19 @@ export async function renderOverviewPage(view: HTMLElement) {
         ['Net revenue this month', moneyList(o.revenue_month, 'net_minor'), 'after refunds'],
         ['Net revenue all time', moneyList(o.revenue_all_time, 'net_minor'), `gross ${moneyList(o.revenue_all_time, 'gross_minor')}`],
       ])}<p class="note">From Dodo Payments webhooks. Gateway fees and payouts are in the Dodo dashboard.</p></section>` +
-      `<section class="panel"><div class="panel-head"><h2>Latest sign-ups</h2><a href="#/customers">All customers →</a></div>${dataTable(
+      `<section class="panel"><div class="panel-head"><h2>Latest sign-ups</h2><a class="btn-link" href="#/customers">View all customers</a></div>${dataTable(
         ['Customer', 'Email', 'Plan', 'Email status', 'Signed up'],
         (o.recentSignups || []).map((c: any) => [
-          `<a href="#/customers/${esc(c.id)}">${esc(c.name || 'No name given')}</a>`,
+          `<a class="strong" href="#/customers/${esc(c.id)}">${esc(c.name || 'No name given')}</a>`,
           esc(c.email),
           planBadge(c.plan),
           yesNo(!!c.email_verified_at),
           `${when(c.created_at)}<div class="sub">${ago(c.created_at)}</div>`,
         ]),
-        'No customers yet.'
+        'No customers yet.',
+        (o.recentSignups || []).map((c: any) => `class="clickable" data-href="#/customers/${esc(c.id)}"`)
       )}</section>`;
+    view.querySelectorAll<HTMLElement>('tr[data-href]').forEach((tr) => (tr.onclick = () => (location.hash = tr.dataset.href!)));
     view.querySelector<HTMLButtonElement>('#ov-refresh')!.onclick = () => void renderOverviewPage(view);
   } catch (e) {
     view.querySelector('.loading')!.outerHTML = `<div class="error">${esc(e instanceof Error ? e.message : 'Could not load the overview')}</div>`;

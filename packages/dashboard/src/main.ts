@@ -100,7 +100,7 @@ async function renderHome() {
   }
 
   app.innerHTML = `
-    <header class="page-head"><div><h1>Projects</h1><p>Every RTC project on the server, including demo and admin-made ones. Open one for events, call quality, plan, webhooks and code.</p></div></header>
+    <header class="page-head"><div><h1>Projects</h1><p>Every RTC project on the server. Open one to see its events, call quality, plan and webhooks.</p></div></header>
     <section class="card">
       <h2>Projects</h2>
       ${error ? `<div class="error">${escapeHtml(error)}</div>` : ""}
@@ -113,21 +113,8 @@ async function renderHome() {
             </div>
             <span class="badge ${a.active ? "ok" : "off"}">${a.active ? "active" : "inactive"}</span>
           </button>
-        `).join("") : `<div class="empty">No projects yet. Create one below.</div>`}
+        `).join("") : `<div class="empty">No projects yet.</div>`}
       </div>
-    </section>
-    <section class="card">
-      <h2>Create project</h2>
-      <div class="row">
-        <input id="new-app-name" placeholder="My Product" />
-        <button id="create-app-btn">Create</button>
-      </div>
-      <div id="create-result"></div>
-      <div id="create-error" class="error"></div>
-    </section>
-    <section class="card">
-      <h2>Links</h2>
-      <p class="muted">RTC demo: <a href="${import.meta.env.DEV ? "http://localhost:5180" : "/demo/"}" target="_blank">open demo</a> · Signaling: ${window.location.origin}</p>
     </section>
   `;
 
@@ -140,27 +127,6 @@ async function renderHome() {
     });
   });
 
-  document.getElementById("create-app-btn")!.onclick = async () => {
-    const name = (document.getElementById("new-app-name") as HTMLInputElement).value.trim();
-    const errEl = document.getElementById("create-error")!;
-    const resEl = document.getElementById("create-result")!;
-    errEl.textContent = "";
-    resEl.innerHTML = "";
-    if (!name) return;
-    try {
-      const created = await api.createApp(name);
-      resEl.innerHTML = `
-        <div class="secret-box">
-          <strong>App created — save these credentials now</strong><br><br>
-          App ID: ${created.appId}<br>
-          App Secret: ${created.appSecret}<br><br>
-          <span class="muted">${created.note || ""}</span>
-        </div>`;
-      renderHome();
-    } catch (e) {
-      errEl.textContent = e instanceof Error ? e.message : "Create failed";
-    }
-  };
 }
 
 async function renderAppDetail() {
@@ -353,7 +319,7 @@ async function renderQuality(el: HTMLElement, appId: string) {
               <td>${r.packetLossPct != null ? `${r.packetLossPct}%` : "—"}</td>
               <td>${r.roomId}</td>
               <td>${r.userId}</td>
-            </tr>`).join("") : `<tr><td colspan="7" class="empty">No quality reports yet. Start a call in the demo.</td></tr>`}
+            </tr>`).join("") : `<tr><td colspan="7" class="empty">No quality reports yet.</td></tr>`}
         </tbody>
       </table>
     </section>
@@ -374,7 +340,7 @@ async function renderEvents(el: HTMLElement, appId: string) {
               <td>${e.type}</td>
               <td>${e.roomId || "—"}</td>
               <td>${e.userId || "—"}</td>
-            </tr>`).join("") : `<tr><td colspan="4" class="empty">No events yet. Join a room in the demo to generate events.</td></tr>`}
+            </tr>`).join("") : `<tr><td colspan="4" class="empty">No events yet.</td></tr>`}
         </tbody>
       </table>
     </section>
@@ -509,7 +475,6 @@ await rtc.init({
 await rtc.joinRoom("room-1");
 rtc.sendMessage("Hello!");
 await rtc.callUser("user_456");</pre>
-      <p class="muted" style="margin-top:12px">Demo app: <a href="${import.meta.env.DEV ? "http://localhost:5180" : "/demo/"}" target="_blank">${import.meta.env.DEV ? "http://localhost:5180" : "/demo/"}</a></p>
     </section>
   `;
 }

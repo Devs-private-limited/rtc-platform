@@ -464,3 +464,6 @@ table.data th{padding:10px 12px}table.data td{padding:11px 12px}
 .view{max-width:none}
 .kpis{grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr))}
 @media(max-width:860px){.shell{grid-template-columns:minmax(0,1fr)}.kpis{grid-template-columns:1fr 1fr}.kpi-value{font-size:1.25rem}}
+.panel-head{align-items:center;margin-bottom:14px}.panel-head h2{margin:0}
+.btn-link{display:inline-flex;align-items:center;min-height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--rx-line);background:#fff;color:var(--rx-ink);font-weight:600;font-size:14px;text-decoration:none}
+.btn-link:hover{background:var(--rx-mint);color:var(--rx-ink)}
