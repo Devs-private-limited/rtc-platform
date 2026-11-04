@@ -4,6 +4,10 @@ import { dataTable, esc, pageHeader, when } from './ui';
 // One readable sentence per admin change.
 export function describeChange(e: any) {
   const d = e.detail || {};
+  const mail = d.customerEmail === 'sent' ? ' <span class="pill good">customer emailed</span>' : d.customerEmail === 'failed' ? ' <span class="pill bad">email failed</span>' : '';
+  return describe(e, d) + mail;
+}
+function describe(e: any, d: any) {
   switch (e.action) {
     case 'plan.change': return `Changed plan of <strong>${esc(d.email)}</strong> from ${esc(d.from)} to <strong>${esc(d.to)}</strong>. Reason: ${esc(d.reason)}`;
     case 'minutes.add': return `Gave <strong>${esc(Number(d.minutes).toLocaleString('en-IN'))} extra minutes</strong> to ${esc(d.email)} for ${esc(d.month)}. Reason: ${esc(d.note)}`;

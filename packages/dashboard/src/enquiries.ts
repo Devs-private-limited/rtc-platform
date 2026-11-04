@@ -10,7 +10,7 @@ export function renderEnquiries(root:HTMLElement) {
     const q=search.value.trim().toLowerCase();
     const filtered=rows.filter(r=>(!source.value||r.source===source.value)&&`${r.email} ${r.company||''}`.toLowerCase().includes(q));
     status.textContent=`${filtered.length} shown from ${rows.length} loaded; ${total} total enquiries. Latest 500 maximum. Dates use your browser's timezone.`;
-    list.innerHTML=`<table class="data"><thead><tr><th>Email</th><th>Company / product</th><th>Source</th><th>Last submitted</th><th>Follow up</th></tr></thead><tbody>${filtered.length?filtered.map(r=>`<tr><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.company||'Not provided')}</td><td>${escapeHtml(r.source)}</td><td>${escapeHtml(new Date(r.createdAt).toLocaleString())}</td><td><a href="mailto:${encodeURIComponent(r.email)}?subject=RTCExpress%20enquiry">Compose email</a></td></tr>`).join(''):'<tr><td colspan="5">No matching enquiries.</td></tr>'}</tbody></table>`;
+    list.innerHTML=`<table class="data"><thead><tr><th>Email</th><th>Company / product</th><th>Source</th><th>Last submitted</th><th>Follow up</th></tr></thead><tbody>${filtered.length?filtered.map(r=>`<tr><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.company||'Not provided')}</td><td>${escapeHtml(r.source)}</td><td>${escapeHtml(new Date(r.createdAt).toLocaleString())}</td><td><a class="btn-link small" href="mailto:${encodeURIComponent(r.email)}?subject=RTCExpress%20enquiry">Write email</a></td></tr>`).join(''):'<tr><td colspan="5">No matching enquiries.</td></tr>'}</tbody></table>`;
   }
   async function load(){
     refresh.disabled=true;status.textContent='Loading enquiries...';list.replaceChildren();

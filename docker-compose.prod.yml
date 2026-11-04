@@ -86,6 +86,9 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-}
       PUBLIC_WEBSITE_URL: ${PUBLIC_WEBSITE_URL:-}
       ENQUIRY_ALERT_TO: ${ENQUIRY_ALERT_TO:-}
+      # New sign-up alerts (free accounts too) go here.
+      SIGNUP_ALERT_TO: ${SIGNUP_ALERT_TO:-devsquare67@gmail.com}
+      ADMIN_PANEL_URL: ${ADMIN_PANEL_URL:-}
       # Dodo Payments subscriptions (DODO_ENV is "test" or "live").
       DODO_ENV: ${DODO_ENV:-test}
       DODO_API_KEY: ${DODO_API_KEY:-}

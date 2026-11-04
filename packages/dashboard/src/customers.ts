@@ -7,6 +7,7 @@ import { describeChange } from './history';
 export const escapeHtml = esc;
 
 const state = { q: '', plan: 'all', paid: 'all', sort: 'newest', page: 1 };
+let flash = '';
 
 function subscriptionText(c: any) {
   if (!c.plan || c.plan === 'free') return '<span class="dim">No subscription</span>';
@@ -77,7 +78,7 @@ export async function renderCustomerList(view: HTMLElement) {
 }
 
 export async function renderCustomerDetail(view: HTMLElement, id: string) {
-  view.innerHTML = '<a class="back" href="#/customers">← All customers</a><div class="loading">Loading customer…</div>';
+  view.innerHTML = '<a class="btn-link btn-back" href="#/customers"><span aria-hidden="true">←</span> Back to customers</a><div class="loading">Loading customer…</div>';
   try {
     const data = await adminFetch<any>(`/v1/admin/customers/${encodeURIComponent(id)}`);
     const c = data.account, p = data.profile || {};
@@ -86,8 +87,9 @@ export async function renderCustomerDetail(view: HTMLElement, id: string) {
     const field = (k: string, v: string) => `<div><dt>${esc(k)}</dt><dd>${v || '<span class="dim">Not provided</span>'}</dd></div>`;
     const sourceKnown = c.signup_ip || c.signup_source || c.signup_user_agent;
     view.innerHTML =
-      '<a class="back" href="#/customers">← All customers</a>' +
+      '<a class="btn-link btn-back" href="#/customers"><span aria-hidden="true">←</span> Back to customers</a>' +
       pageHeader(c.name || c.email, `${esc(c.email)} · ${planBadge(c.plan)} · signed up ${when(c.created_at)}`) +
+      (flash ? `<div class="flash" role="status">${flash}</div>` : '') +
       manageSection(c, data, planLimit) +
       `<section class="panel"><h2>Usage</h2>${kpis([
         ['Minutes this month', usageBar(Number(c.minutes_month), limit), limit ? `${data.planLimits[c.plan].name} plan ${num(planLimit)}${bonus ? ` + ${num(bonus)} extra` : ''}` : ''],
@@ -109,7 +111,7 @@ export async function renderCustomerDetail(view: HTMLElement, id: string) {
       </dl></section>` +
       `<section class="panel"><h2>Where this sign-up came from</h2>${sourceKnown
         ? `<dl class="facts">
-          ${field('IP address', c.signup_ip ? `<code>${esc(c.signup_ip)}</code> · <a href="https://ipinfo.io/${encodeURIComponent(c.signup_ip)}" target="_blank" rel="noopener noreferrer">look up location ↗</a>` : '')}
+          ${field('IP address', c.signup_ip ? `<code>${esc(c.signup_ip)}</code> <a class="btn-link small" href="https://ipinfo.io/${encodeURIComponent(c.signup_ip)}" target="_blank" rel="noopener noreferrer">Look up location</a>` : '')}
           ${field('Device', esc(device(c.signup_user_agent)))}
           ${field('Came from', esc(c.signup_source))}
           ${field('Browser details', `<span class="sub">${esc(c.signup_user_agent)}</span>`)}</dl>`
@@ -122,6 +124,7 @@ export async function renderCustomerDetail(view: HTMLElement, id: string) {
         'No payments yet.')}</section>` +
       `<section class="panel"><h2>Admin changes for this customer</h2>${dataTable(['When', 'Who', 'What happened'],
         (data.history || []).map((h: any) => [when(h.created_at), esc(h.actor), `<span class="wrap">${describeChange(h)}</span>`]), 'No admin changes yet.')}</section>`;
+    flash = '';
     wireManage(view, c);
   } catch (e) {
     view.querySelector('.loading')!.outerHTML = `<div class="error">${esc(e instanceof Error ? e.message : 'Could not load the customer')}</div>`;
@@ -135,6 +138,7 @@ export function statusPill(status: unknown) {
 }
 
 const PLAN_NAMES: Record<string, string> = { free: 'Free', starter: 'Starter', pro: 'Pro' };
+const EMAIL_NOTE: Record<string, string> = { sent: 'The customer was emailed.', skipped: 'No email was sent (you unticked it).', 'not-configured': 'No email was sent: email is not set up on the server.', failed: 'The email to the customer could not be sent. The change itself is saved.' };
 
 function manageSection(c: any, data: any, planLimit: number | undefined) {
   if (!canEdit()) return `<section class="panel"><h2>Manage</h2><p class="note">Your access is view-only, so you can’t change plans or minutes.</p></section>`;
@@ -149,6 +153,7 @@ function manageSection(c: any, data: any, planLimit: number | undefined) {
         ${paid ? `<p class="warn-box">This customer pays through Dodo (${esc(c.billing_period || '')} subscription, active). Changing the plan here does <strong>not</strong> change or cancel what Dodo charges. Do that in the Dodo dashboard if needed.</p>` : ''}
         <label>New plan<select name="plan">${Object.keys(PLAN_NAMES).map((p) => `<option value="${p}" ${p === c.plan ? 'selected disabled' : ''}>${PLAN_NAMES[p]}${p === c.plan ? ' (current)' : ''}</option>`).join('')}</select></label>
         <label><span>Reason <span class="sub">(saved in the history)</span></span><input name="reason" required maxlength="300" placeholder="e.g. Friend testing Pro features"></label>
+        <label class="check"><input type="checkbox" name="notify" checked> Email the customer about this</label>
         <button type="submit">Change plan</button><div class="m-msg" role="status"></div>
       </form>
       <form id="m-bonus" class="manage-card">
@@ -157,6 +162,7 @@ function manageSection(c: any, data: any, planLimit: number | undefined) {
         <div class="quick">${[500, 1000, 5000].map((m) => `<button type="button" class="secondary small" data-quick="${m}">+${num(m)}</button>`).join('')}</div>
         <label>Minutes<input name="minutes" type="number" min="1" max="1000000" step="1" required placeholder="e.g. 1000"></label>
         <label><span>Reason <span class="sub">(saved in the history)</span></span><input name="note" required maxlength="300" placeholder="e.g. Goodwill after a server issue"></label>
+        <label class="check"><input type="checkbox" name="notify" checked> Email the customer (“complimentary minutes added”)</label>
         <button type="submit">Add minutes</button><div class="m-msg" role="status"></div>
         ${grants.length ? `<h4>Extra minutes this month</h4><ul class="grants">${grants.map((g: any) => `<li><span><strong>+${num(g.minutes)} min</strong> · ${esc(g.note || '')}<span class="sub">by ${esc(g.granted_by || '—')}, ${when(g.created_at)}</span></span><button type="button" class="danger small" data-grant="${esc(g.id)}">Remove</button></li>`).join('')}</ul>` : ''}
       </form>
@@ -171,15 +177,19 @@ function wireManage(view: HTMLElement, c: any) {
       const msg = form.querySelector<HTMLElement>('.m-msg')!, btn = form.querySelector<HTMLButtonElement>('button[type=submit]')!;
       if (confirmText && !confirm(confirmText())) return;
       btn.disabled = true; msg.className = 'm-msg'; msg.textContent = 'Saving…';
-      try { await adminFetch(url, { method: 'POST', body: JSON.stringify(body()) }); reload(); }
+      try {
+        const res = await adminFetch<any>(url, { method: 'POST', body: JSON.stringify(body()) });
+        flash = `${url.endsWith('/plan') ? 'Plan changed.' : 'Extra minutes added.'} ${EMAIL_NOTE[res.customerEmail] || ''}`;
+        reload();
+      }
       catch (err) { msg.className = 'm-msg error'; msg.textContent = err instanceof Error ? err.message : 'Could not save'; btn.disabled = false; }
     };
   };
   const plan = view.querySelector<HTMLFormElement>('#m-plan'), bonus = view.querySelector<HTMLFormElement>('#m-bonus');
-  if (plan) submit(plan, `/v1/admin/customers/${c.id}/plan`, () => ({ plan: plan.plan.value, reason: plan.reason.value }),
+  if (plan) submit(plan, `/v1/admin/customers/${c.id}/plan`, () => ({ plan: plan.plan.value, reason: plan.reason.value, notify: plan.notify.checked }),
     () => `Move ${c.email} from ${PLAN_NAMES[c.plan] || c.plan} to ${PLAN_NAMES[plan.plan.value]}? No payment is taken.`);
   if (bonus) {
-    submit(bonus, `/v1/admin/customers/${c.id}/bonus-minutes`, () => ({ minutes: Number(bonus.minutes.value), note: bonus.note.value }));
+    submit(bonus, `/v1/admin/customers/${c.id}/bonus-minutes`, () => ({ minutes: Number(bonus.minutes.value), note: bonus.note.value, notify: bonus.notify.checked }));
     bonus.querySelectorAll<HTMLButtonElement>('[data-quick]').forEach((b) => (b.onclick = () => { bonus.minutes.value = b.dataset.quick!; bonus.note.focus(); }));
     bonus.querySelectorAll<HTMLButtonElement>('[data-grant]').forEach((b) => (b.onclick = async () => {
       if (!confirm('Remove these extra minutes?')) return;

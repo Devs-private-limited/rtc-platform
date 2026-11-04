@@ -501,3 +501,8 @@ table.compare tr.group td{background:#F6F9F7;font:700 12px var(--rx-body);text-t
 .how-grid h3{margin:0 0 6px}
 .how-grid p{font-size:14px;color:var(--rx-muted)}
 .manage-card label .sub{display:inline;font-weight:400;margin:0}
+.btn-link.small{min-height:30px;padding:0 12px;font-size:13px;border-radius:8px;margin-left:8px}
+.btn-back{margin-bottom:14px;gap:6px}
+.flash{margin:0 0 16px;padding:12px 16px;border-radius:12px;background:#E3F4EA;border:1px solid #BFE0CF;color:#17633F;font-weight:500}
+.manage-card label.check{flex-direction:row;align-items:center;gap:8px;font-weight:500}
+.manage-card label.check input{width:18px;height:18px;accent-color:var(--rx-teal)}

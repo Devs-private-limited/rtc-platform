@@ -14,7 +14,7 @@ export async function renderPaymentsPage(view: HTMLElement) {
         ['Paid at', 'Customer', 'Plan now', 'What', 'Status', ['Amount', 'num'], ['Refunded', 'num'], 'Payment ID'],
         data.payments.map((p: any) => [
           when(p.paid_at),
-          p.account_id ? `<a href="#/customers/${esc(p.account_id)}">${esc(p.name || p.email)}</a><div class="sub">${esc(p.email)}</div>` : '<span class="dim">Deleted account</span>',
+          p.account_id ? `<a class="strong" href="#/customers/${esc(p.account_id)}">${esc(p.name || p.email)}</a><div class="sub">${esc(p.email)}</div>` : '<span class="dim">Deleted account</span>',
           planBadge(p.plan),
           esc(p.description || '—'),
           statusPill(p.status),

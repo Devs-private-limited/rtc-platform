@@ -4,6 +4,7 @@ import { getBillingSummary } from "../billing.js";
 import { authenticateCustomer, createCustomerAccount } from "../customers.js";
 import { rateLimit } from "../rate-limit.js";
 import { emailConfigured, requestAccountLink } from "../account-security.js";
+import { sendNewSignupAlert } from "../notify-email.js";
 
 const AUTH_LIMIT = 10;
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
@@ -57,6 +58,13 @@ export async function registerAuthRoutes(app: FastifyInstance, jwtSecret: string
           req.log.error({ err: error instanceof Error ? error.message : String(error) }, "Signup verification email failed")
         );
       }
+      // Tell the owner about every new account (free ones too). Never blocks or fails the signup.
+      const ua = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : "";
+      void sendNewSignupAlert({
+        accountId: created.accountId, email: created.email, name: created.name, company: created.company,
+        source: typeof req.body?.source === "string" ? req.body.source.slice(0, 400) : undefined,
+        ip: clientIp(req), device: ua.slice(0, 120),
+      }).then((r) => { if (r === "failed") req.log.error("New signup alert email failed"); });
       const billing = await getBillingSummary(created.appId);
       const session = portalSession(
         { appId: created.appId, appName: created.appName, email: created.email },
