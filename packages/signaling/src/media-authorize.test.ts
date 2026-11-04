@@ -36,3 +36,27 @@ test("media authorization enforces current plan, project membership, and host ro
   assert.equal(await status("read"), 403);
   assert.equal(await status("recording-stop"), 200);
 });
+
+test("1:1 call media rooms are allowed for the two callers only (paid plans use the SFU)", async (t) => {
+  const { registerRinging, markCallConnected, resetCallState } = await import("./call-state.js");
+  const previous = process.env.DATABASE_URL;
+  process.env.DATABASE_URL = "postgresql://unused/test";
+  t.after(async () => { resetCallState(); await closeDb(); if (previous === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = previous; });
+  t.mock.method(getPool()!, "query", async () => ({ rows: [{ plan: "pro" }] }));
+  const app = Fastify(); t.after(() => app.close());
+  const rooms = new MemoryRoomStore(); const roomRoles = new MemoryRoomRoleStore();
+  for (const u of ["ajay", "ravi", "other"]) { await scopedRooms(rooms, "app").join("step4-room", u); scopedRoles(roomRoles, "app").assign("step4-room", u, "publisher"); }
+  await registerMediaAuthorizeRoutes(app, { jwtSecret: "test", rooms, roomRoles });
+  const status = async (userId: string, roomId: string, action = "audio", tokenRoom: string | undefined = "step4-room") =>
+    (await app.inject({ method: "POST", url: "/v1/media/authorize", headers: { authorization: `Bearer ${issueToken({ appId: "app", userId, ...(tokenRoom ? { roomId: tokenRoom } : {}) }, "test")}` }, payload: { roomId, action } })).statusCode;
+
+  assert.equal(await status("ajay", "step4-room-call-c1"), 403, "no call yet");
+  assert.deepEqual(registerRinging("app", "c1", "step4-room", "ajay", "ravi", "video"), { ok: true });
+  markCallConnected("app", "c1");
+  assert.equal(await status("ajay", "step4-room-call-c1"), 200);
+  assert.equal(await status("ravi", "step4-room-call-c1", "video"), 200);
+  assert.equal(await status("ravi", "step4-room-call-c1", "read", undefined), 200);
+  assert.equal(await status("other", "step4-room-call-c1"), 403, "not in the call");
+  assert.equal(await status("ajay", "step4-room-call-c2"), 403, "wrong call id");
+  assert.equal(await status("ajay", "step4-room-call-c1", "audio", "another-room"), 403, "token for another room");
+});

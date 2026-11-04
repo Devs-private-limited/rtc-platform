@@ -27,7 +27,7 @@ export function createAuthHook(jwtSecret: string, signalingUrl = process.env.SIG
       }
       const params = req.params as { roomId?: string };
       if (params.roomId) {
-        if (claims.roomId && claims.roomId !== params.roomId) {
+        if (claims.roomId && claims.roomId !== params.roomId && !params.roomId.startsWith(`${claims.roomId}-call-`)) {
           return reply.status(403).send({ error: "Token is not valid for this room" });
         }
         (req as AuthenticatedRequest).rtcRoomId = params.roomId;

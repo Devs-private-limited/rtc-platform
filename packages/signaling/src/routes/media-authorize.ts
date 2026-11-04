@@ -5,6 +5,7 @@ import { canModerate, canPublish } from "../room-roles.js";
 import { requireRoomUser } from "../room-access.js";
 import { scopedRoles } from "../tenant-scope.js";
 import { checkAppFeature } from "../plan-features.js";
+import { callMediaRoomFor } from "../call-state.js";
 
 export async function registerMediaAuthorizeRoutes(app: FastifyInstance, deps: { jwtSecret: string; rooms: RoomStore; roomRoles: RoomRoleStore }) {
   app.post<{ Body: { roomId?: string; action?: string } }>("/v1/media/authorize", async (req, reply) => {
@@ -15,7 +16,7 @@ export async function registerMediaAuthorizeRoutes(app: FastifyInstance, deps: {
     }
     const claims = await requireRoomUser(req, reply, deps.jwtSecret, deps.rooms, roomId);
     if (!claims) return;
-    const role = scopedRoles(deps.roomRoles, claims.appId).get(roomId, claims.userId);
+    const role = scopedRoles(deps.roomRoles, claims.appId).get(callMediaRoomFor(claims.appId, claims.userId, roomId) ?? roomId, claims.userId);
     if ((action.startsWith("recording-") || action.startsWith("cdn-")) && !canModerate(role)) {
       return reply.status(403).send({ error: "Only the room host can manage recording or streaming" });
     }

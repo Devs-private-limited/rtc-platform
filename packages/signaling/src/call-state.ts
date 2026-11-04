@@ -25,6 +25,17 @@ export function findUserCall(appId: string, userId: string): ActiveCall | null {
   return callsById.get(tenantKey(appId, callId)) ?? null;
 }
 
+/**
+ * 1:1 calls through the SFU use the media room `${roomId}-call-${callId}`.
+ * Returns the call's own room when `mediaRoomId` is that room for this user's
+ * current call, otherwise null.
+ */
+export function callMediaRoomFor(appId: string, userId: string, mediaRoomId: string): string | null {
+  const call = findUserCall(appId, userId);
+  if (!call || (call.callerUserId !== userId && call.calleeUserId !== userId)) return null;
+  return mediaRoomId === `${call.roomId}-call-${call.callId}` ? call.roomId : null;
+}
+
 export function registerRinging(
   appId: string,
   callId: string,
