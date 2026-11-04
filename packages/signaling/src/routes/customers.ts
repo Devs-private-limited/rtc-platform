@@ -33,14 +33,20 @@ const planLimits=Object.fromEntries(Object.entries(BILLING_PLANS).map(([id,p])=>
 
 export async function registerCustomerRoutes(app:FastifyInstance,secret:string) {
   app.addHook('onSend',async(_req,reply,payload)=>{reply.header('Cache-Control','no-store');return payload;});
-  app.get<{Querystring:{q?:string;page?:string;paid?:string;sort?:string;plan?:string}}>('/v1/admin/customers',async(req,reply)=>{
+  app.get<{Querystring:{q?:string;page?:string;paid?:string;sort?:string;plan?:string;joined?:string;activity?:string;email?:string;status?:string}}>('/v1/admin/customers',async(req,reply)=>{
     if(!requireAdmin(req,reply))return;
     const db=getPool();if(!db)return reply.code(503).send({error:'Database unavailable'});
     const q=req.query.q?.trim() || '',page=Number(req.query.page || 1),paid=req.query.paid || 'all',sort=req.query.sort || 'newest',plan=req.query.plan || 'all';
-    if(q.length>200 || !Number.isInteger(page) || page<1 || page>100000 || !['all','paid','unpaid'].includes(paid) || !Object.hasOwn(sorts,sort) || !['all','free','starter','pro'].includes(plan))return reply.code(400).send({error:'Invalid search, page, filter or sort'});
+    const joined=req.query.joined || 'all',activity=req.query.activity || 'all',email=req.query.email || 'all',status=req.query.status || 'all';
+    if(q.length>200 || !Number.isInteger(page) || page<1 || page>100000 || !['all','paid','unpaid'].includes(paid) || !Object.hasOwn(sorts,sort) || !['all','free','starter','pro'].includes(plan)
+      || !['all','month','7d'].includes(joined) || !['all','active30','never'].includes(activity) || !['all','verified','unverified'].includes(email) || !['all','active','blocked'].includes(status))return reply.code(400).send({error:'Invalid search, page, filter or sort'});
     const filter=`($1='' OR POSITION(LOWER($1) IN LOWER(CONCAT_WS(' ',c.name,c.email,c.company,c.app_id,b.business_name)))>0)
       AND ($2='all' OR ($2='paid' AND COALESCE(p.payment_count,0)>0) OR ($2='unpaid' AND COALESCE(p.payment_count,0)=0))
-      AND ($3='all' OR a.plan=$3)`;
+      AND ($3='all' OR a.plan=$3)
+      AND ($4='all' OR ($4='month' AND c.created_at>=${monthStart}) OR ($4='7d' AND c.created_at>=NOW()-interval '7 days'))
+      AND ($5='all' OR ($5='active30' AND u.last_active_at>=NOW()-interval '30 days') OR ($5='never' AND u.last_active_at IS NULL))
+      AND ($6='all' OR ($6='verified' AND c.email_verified_at IS NOT NULL) OR ($6='unverified' AND c.email_verified_at IS NULL))
+      AND ($7='all' OR ($7='active' AND a.active) OR ($7='blocked' AND NOT a.active))`;
     const base=`FROM customer_accounts c JOIN apps a ON a.app_id=c.app_id LEFT JOIN customer_business_profiles b ON b.account_id=c.id
       LEFT JOIN (SELECT app_id,COUNT(*)::int payment_count,SUM(amount_minor)::text total_paid_minor,SUM(refunded_minor)::text refunded_minor,MAX(paid_at) last_paid_at,MAX(currency) currency
         FROM billing_payments WHERE ${verified} GROUP BY app_id) p ON p.app_id=c.app_id ${usageJoin} WHERE ${filter}`;
@@ -53,8 +59,8 @@ export async function registerCustomerRoutes(app:FastifyInstance,secret:string) 
           FROM billing_payments WHERE ${verified} GROUP BY currency ORDER BY currency) t),'[]'::json) totals`),
       db.query(`SELECT c.id,c.name,c.email,c.company,c.app_id,c.created_at,a.plan,a.active,a.billing_period,a.subscription_status,a.subscription_renews_at,a.subscription_cancel_at_period_end,b.business_name,COALESCE(p.payment_count,0) payment_count,
         COALESCE(p.total_paid_minor,'0') total_paid_minor,COALESCE(p.refunded_minor,'0') refunded_minor,p.last_paid_at,p.currency,c.email_verified_at,a.name project_name,c.signup_source,${usageColumns}
-        ${base} ORDER BY ${sorts[sort]},c.id LIMIT 25 OFFSET $4`,[q,paid,plan,(page-1)*25]),
-      db.query(`SELECT COUNT(*)::int total ${base}`,[q,paid,plan]),
+        ${base} ORDER BY ${sorts[sort]},c.id LIMIT 25 OFFSET $8`,[q,paid,plan,joined,activity,email,status,(page-1)*25]),
+      db.query(`SELECT COUNT(*)::int total ${base}`,[q,paid,plan,joined,activity,email,status]),
     ]);
     return {summary:summary.rows[0],scope:'all_time',customers:customers.rows,total:count.rows[0].total,page,pageSize:25,paymentIntegration:'dodo',planLimits};
   });
@@ -89,7 +95,7 @@ export async function registerCustomerRoutes(app:FastifyInstance,secret:string) 
   const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
   async function findAccount(id:string){
     if(!uuid.test(id))return null;
-    const r=await getPool()!.query('SELECT c.id,c.email,c.app_id,a.plan,a.subscription_status FROM customer_accounts c JOIN apps a ON a.app_id=c.app_id WHERE c.id=$1',[id]);
+    const r=await getPool()!.query('SELECT c.id,c.email,c.app_id,a.plan,a.active,a.subscription_status FROM customer_accounts c JOIN apps a ON a.app_id=c.app_id WHERE c.id=$1',[id]);
     return r.rows[0] || null;
   }
   // Manual plan change (no payment). A later Dodo subscription event can change it again.
@@ -133,6 +139,45 @@ export async function registerCustomerRoutes(app:FastifyInstance,secret:string) 
     if(!r.rowCount)return reply.code(404).send({error:'Grant not found'});
     await audit(adminIdentity(req)!.email,'minutes.remove',acc.id,{email:acc.email,minutes:r.rows[0].minutes,month:r.rows[0].month});
     return {removed:true};
+  });
+  // Block: the customer can't sign in, open sessions end at once, and their app can't get new call/chat tokens.
+  // Nothing is deleted, and unblocking restores everything.
+  app.post<{Params:{accountId:string};Body:{blocked?:boolean;reason?:string}}>('/v1/admin/customers/:accountId/access',async(req,reply)=>{
+    if(!requireAdmin(req,reply))return;
+    const db=getPool();if(!db)return reply.code(503).send({error:'Database unavailable'});
+    const blocked=req.body?.blocked,reason=String(req.body?.reason || '').trim().slice(0,300);
+    if(typeof blocked!=='boolean')return reply.code(400).send({error:'Say whether to block or unblock.'});
+    if(!reason)return reply.code(400).send({error:'Write a short reason (for the change history).'});
+    const acc=await findAccount(req.params.accountId);if(!acc)return reply.code(404).send({error:'Customer not found'});
+    if(acc.active===!blocked)return reply.code(400).send({error:blocked?'This customer is already blocked.':'This customer is not blocked.'});
+    await db.query('UPDATE apps SET active=$1,portal_version=portal_version+1 WHERE app_id=$2',[!blocked,acc.app_id]);
+    await audit(adminIdentity(req)!.email,blocked?'account.block':'account.unblock',acc.id,{email:acc.email,reason});
+    return {blocked};
+  });
+  // Delete: owner only, and never for anyone who has paid (payment records must be kept for accounts/tax).
+  app.delete<{Params:{accountId:string};Body:{confirmEmail?:string;reason?:string}}>('/v1/admin/customers/:accountId',async(req,reply)=>{
+    if(!requireAdmin(req,reply,'owner'))return;
+    const db=getPool();if(!db)return reply.code(503).send({error:'Database unavailable'});
+    const acc=await findAccount(req.params.accountId);if(!acc)return reply.code(404).send({error:'Customer not found'});
+    const reason=String(req.body?.reason || '').trim().slice(0,300);
+    if(String(req.body?.confirmEmail || '').trim().toLowerCase()!==String(acc.email).toLowerCase())return reply.code(400).send({error:'Type the customer’s email exactly to confirm.'});
+    if(!reason)return reply.code(400).send({error:'Write a short reason (for the change history).'});
+    const paid=await db.query('SELECT (SELECT COUNT(*) FROM billing_payments WHERE app_id=$1)+(SELECT COUNT(*) FROM customer_payments WHERE account_id=$2) AS n',[acc.app_id,acc.id]);
+    if(Number(paid.rows[0].n)>0 || (acc.plan!=='free' && acc.subscription_status==='active'))return reply.code(409).send({error:'This customer has payment records or an active subscription, so they can’t be deleted (records must be kept). Block them instead.'});
+    const client=await db.connect();
+    try{
+      await client.query('BEGIN');
+      for(const table of ['events','messages','call_sessions','media_sessions','recordings','call_quality_reports','webhooks','app_bonus_minutes']){
+        await client.query('SAVEPOINT s');
+        try{await client.query(`DELETE FROM ${table} WHERE app_id=$1`,[acc.app_id]);await client.query('RELEASE SAVEPOINT s');}
+        catch{await client.query('ROLLBACK TO SAVEPOINT s');} // table not present in this database
+      }
+      await client.query('DELETE FROM customer_accounts WHERE id=$1',[acc.id]);
+      await client.query('DELETE FROM apps WHERE app_id=$1',[acc.app_id]);
+      await client.query('COMMIT');
+    }catch(err){await client.query('ROLLBACK');throw err;}finally{client.release();}
+    await audit(adminIdentity(req)!.email,'account.delete',acc.id,{email:acc.email,appId:acc.app_id,reason});
+    return {deleted:true};
   });
   app.get('/v1/admin/overview',async(req,reply)=>{
     if(!requireAdmin(req,reply))return;

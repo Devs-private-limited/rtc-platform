@@ -23,6 +23,8 @@ test('admin customer reporting and customer-owned business profiles',async t=>{
   const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222';
   await pg.query(`INSERT INTO customer_accounts(id,email,password_hash,name,company,app_id) VALUES ($1,'first@example.test','SENSITIVE-HASH','First','Original business','app-a'),($2,'second@example.test','OTHER-HASH','Second',NULL,'app-b')`,[a,b]);
   t.mock.method(getPool()!,'query',async(sql:string,args?:unknown[])=>{const result=await pg.query(sql,args);return {...result,rowCount:result.rows.length || result.affectedRows};});
+  const q=async(sql:string,args?:unknown[])=>{const result=await pg.query(sql,args);return {...result,rowCount:result.rows.length || result.affectedRows};};
+  t.mock.method(getPool()!,'connect',async()=>({query:q,release(){}}));
   await app.register(async scope=>registerCustomerRoutes(scope,'test'));
   const admin={'x-admin-key':'test-admin'};
   const portal=(appId='app-a')=>({authorization:`Bearer ${issueToken({appId,userId:'__portal__'},'test')}`});
@@ -111,5 +113,28 @@ test('admin customer reporting and customer-owned business profiles',async t=>{
     assert.equal((await app.inject({method:'DELETE',url:`/v1/admin/customers/${b}/bonus-minutes/${g.json().id}`,headers:admin})).statusCode,200);
     assert.equal((await getBillingSummary('app-b')).bonusMinutes,0);
     assert.equal((await app.inject({method:'POST',url:`/v1/admin/customers/${b}/plan`,headers:portal('app-b'),payload:{plan:'pro',reason:'me'}})).statusCode,401);
+  });
+  await t.test('filters behind the overview numbers; block, unblock and delete',async()=>{
+    const list=async(qs:string)=>(await app.inject({url:`/v1/admin/customers?${qs}`,headers:admin})).json();
+    assert.equal((await list('joined=month')).total,2);assert.equal((await list('activity=active30')).customers[0].id,b);assert.equal((await list('activity=never')).total,1);
+    assert.equal((await list('email=unverified')).total,2);assert.equal((await app.inject({url:'/v1/admin/customers?joined=year',headers:admin})).statusCode,400);
+    const access=(id:string,payload:any)=>app.inject({method:'POST',url:`/v1/admin/customers/${id}/access`,headers:admin,payload});
+    assert.equal((await access(b,{blocked:true})).statusCode,400,'reason required');
+    assert.equal((await access(b,{blocked:true,reason:'Spam'})).statusCode,200);
+    assert.equal((await list('status=blocked')).total,1);
+    assert.equal((await app.inject({url:'/v1/portal/business-profile',headers:portal('app-b')})).statusCode,401,'blocked customer is signed out');
+    assert.equal((await access(b,{blocked:true,reason:'again'})).statusCode,400);
+    assert.equal((await access(b,{blocked:false,reason:'Sorted out'})).statusCode,200);
+    const del=(id:string,payload:any)=>app.inject({method:'DELETE',url:`/v1/admin/customers/${id}`,headers:admin,payload});
+    assert.equal((await del(a,{confirmEmail:'first@example.test',reason:'x'})).statusCode,409,'paying customers are never deleted');
+    assert.equal((await del(b,{confirmEmail:'second@example.test',reason:'x'})).statusCode,409,'even failed payment attempts are kept');
+    await pg.exec(`DELETE FROM billing_payments WHERE app_id='app-b'`);
+    assert.equal((await del(b,{confirmEmail:'wrong@example.test',reason:'x'})).statusCode,400);
+    const ok=await del(b,{confirmEmail:'SECOND@example.test',reason:'Test account'});assert.equal(ok.statusCode,200,ok.body);
+    assert.equal((await pg.query(`SELECT 1 FROM apps WHERE app_id='app-b'`)).rows.length,0);
+    assert.equal((await pg.query(`SELECT 1 FROM messages WHERE app_id='app-b'`)).rows.length,0);
+    assert.equal((await pg.query(`SELECT 1 FROM billing_payments WHERE app_id='app-a'`)).rows.length,2,'other customers untouched');
+    const h=(await app.inject({url:'/v1/admin/customers?page=1',headers:admin})).json();assert.equal(h.total,1);
+    assert.equal((await pg.query(`SELECT action FROM admin_audit WHERE target=$1 ORDER BY id DESC LIMIT 1`,[b])).rows[0].action,'account.delete');
   });
 });

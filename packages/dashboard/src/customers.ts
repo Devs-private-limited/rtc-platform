@@ -1,12 +1,31 @@
 import { adminFetch } from './api';
 import { ago, dataTable, device, esc, kpis, minutes, money, num, pageHeader, planBadge, usageBar, when, yesNo } from './ui';
-import { canEdit } from './me';
+import { canEdit, isOwner } from './me';
 import { describeChange } from './history';
 
 // Kept for older imports (enquiries.ts).
 export const escapeHtml = esc;
 
-const state = { q: '', plan: 'all', paid: 'all', sort: 'newest', page: 1 };
+const DEFAULTS = { q: '', plan: 'all', paid: 'all', sort: 'newest', joined: 'all', activity: 'all', email: 'all', status: 'all', page: 1 };
+const state = { ...DEFAULTS };
+const FILTER_LABELS: Record<string, Record<string, string>> = {
+  joined: { month: 'joined this month', '7d': 'joined in the last 7 days' },
+  activity: { active30: 'active in the last 30 days', never: 'never used their app' },
+  email: { verified: 'verified email', unverified: 'email not verified' },
+  paid: { paid: 'have paid', unpaid: 'never paid' },
+  status: { active: 'not blocked', blocked: 'blocked' },
+};
+
+// A link like #/customers?joined=month (from the Overview tiles) opens the list with that filter.
+function presetFromHash() {
+  const query = location.hash.split('?')[1];
+  if (!query) return;
+  const p = new URLSearchParams(query);
+  Object.assign(state, DEFAULTS);
+  for (const k of ['plan', 'paid', 'joined', 'activity', 'email', 'status'] as const) if (p.get(k)) (state as any)[k] = p.get(k);
+  history.replaceState(null, '', '#/customers');
+}
+const opt = (name: string, pairs: [string, string][]) => `<select name="${name}">${pairs.map(([v, l]) => `<option value="${v}" ${(state as any)[name] === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
 let flash = '';
 
 function subscriptionText(c: any) {
@@ -17,16 +36,23 @@ function subscriptionText(c: any) {
 }
 
 export async function renderCustomerList(view: HTMLElement) {
+  presetFromHash();
+  const active = Object.entries(FILTER_LABELS).filter(([k]) => (state as any)[k] !== 'all').map(([k, m]) => m[(state as any)[k]]).concat(state.plan !== 'all' ? [`on ${state.plan}`] : []);
   view.innerHTML =
     pageHeader('Customers', 'Everyone who signed up for an RTCExpress console account. Click a row for full details.') +
     `<section class="panel">
       <form id="cust-filter" class="toolbar">
         <input name="q" type="search" maxlength="200" placeholder="Search name, email, company or App ID" value="${esc(state.q)}" aria-label="Search">
-        <label>Plan<select name="plan">${['all', 'free', 'starter', 'pro'].map((v) => `<option value="${v}" ${state.plan === v ? 'selected' : ''}>${v === 'all' ? 'All plans' : v[0].toUpperCase() + v.slice(1)}</option>`).join('')}</select></label>
-        <label>Payments<select name="paid">${[['all', 'Everyone'], ['paid', 'Has paid'], ['unpaid', 'Never paid']].map(([v, l]) => `<option value="${v}" ${state.paid === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-        <label>Sort by<select name="sort">${[['newest', 'Newest sign-up'], ['minutes_month', 'Most minutes this month'], ['minutes_total', 'Most minutes all time'], ['last_active', 'Recently active'], ['paid', 'Most payments']].map(([v, l]) => `<option value="${v}" ${state.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-        <button type="submit">Apply</button>
+        <label>Joined${opt('joined', [['all', 'Any time'], ['month', 'This month'], ['7d', 'Last 7 days']])}</label>
+        <label>Plan${opt('plan', [['all', 'All plans'], ['free', 'Free'], ['starter', 'Starter'], ['pro', 'Pro']])}</label>
+        <label>Activity${opt('activity', [['all', 'Anyone'], ['active30', 'Active in 30 days'], ['never', 'Never used app']])}</label>
+        <label>Email${opt('email', [['all', 'Any'], ['verified', 'Verified'], ['unverified', 'Not verified']])}</label>
+        <label>Payments${opt('paid', [['all', 'Everyone'], ['paid', 'Has paid'], ['unpaid', 'Never paid']])}</label>
+        <label>Account${opt('status', [['all', 'All'], ['active', 'Not blocked'], ['blocked', 'Blocked']])}</label>
+        <label>Sort by${opt('sort', [['newest', 'Newest sign-up'], ['minutes_month', 'Most minutes this month'], ['minutes_total', 'Most minutes all time'], ['last_active', 'Recently active'], ['paid', 'Most payments']])}</label>
+        <button type="submit">Search</button>
       </form>
+      ${active.length ? `<div class="filter-bar"><span>Showing customers who: <strong>${esc(active.join(', '))}</strong></span><button type="button" class="secondary small" id="cust-clear">Clear filters</button></div>` : ''}
       <p id="cust-status" class="note" role="status">Loading…</p>
       <div id="cust-table"></div>
       <div class="pager"><button class="secondary" id="cust-prev">← Previous</button><span id="cust-page"></span><button class="secondary" id="cust-next">Next →</button></div>
@@ -38,16 +64,18 @@ export async function renderCustomerList(view: HTMLElement) {
   form.onsubmit = (e) => {
     e.preventDefault();
     const f = new FormData(form);
-    Object.assign(state, { q: String(f.get('q') || ''), plan: String(f.get('plan')), paid: String(f.get('paid')), sort: String(f.get('sort')), page: 1 });
+    Object.assign(state, { q: String(f.get('q') || ''), plan: String(f.get('plan')), paid: String(f.get('paid')), sort: String(f.get('sort')), joined: String(f.get('joined')), activity: String(f.get('activity')), email: String(f.get('email')), status: String(f.get('status')), page: 1 });
     void renderCustomerList(view);
   };
   form.querySelectorAll('select').forEach((s) => (s.onchange = () => form.requestSubmit()));
+  const clear = view.querySelector<HTMLButtonElement>('#cust-clear');
+  if (clear) clear.onclick = () => { Object.assign(state, DEFAULTS); void renderCustomerList(view); };
   prev.onclick = () => { state.page--; void renderCustomerList(view); };
   next.onclick = () => { state.page++; void renderCustomerList(view); };
   prev.disabled = next.disabled = true;
   try {
-    const { q, plan, paid, sort, page } = state;
-    const data = await adminFetch<any>(`/v1/admin/customers?${new URLSearchParams({ q, plan, paid, sort, page: String(page) })}`);
+    const { page } = state;
+    const data = await adminFetch<any>(`/v1/admin/customers?${new URLSearchParams(Object.fromEntries(Object.entries(state).map(([k, v]) => [k, String(v)])))}`);
     if (!view.contains(form)) return;
     const limits = data.planLimits || {};
     const from = data.total ? (page - 1) * data.pageSize + 1 : 0, to = Math.min(page * data.pageSize, data.total);
@@ -56,7 +84,7 @@ export async function renderCustomerList(view: HTMLElement) {
       ['Customer', 'Plan', 'Email', ['Minutes this month', 'num'], ['Minutes all time', 'num'], ['Messages', 'num'], 'Last active', 'Paid', 'Signed up'],
       data.customers.map((c: any) => [
         `<a class="strong" href="#/customers/${esc(c.id)}">${esc(c.name || 'No name given')}</a><div class="sub">${esc(c.email)}</div>${c.company || c.business_name ? `<div class="sub">${esc(c.business_name || c.company)}</div>` : ''}`,
-        planBadge(c.plan),
+        planBadge(c.plan) + (c.active === false ? ' <span class="pill bad">Blocked</span>' : ''),
         yesNo(!!c.email_verified_at),
         usageBar(Number(c.minutes_month), limits[c.plan] ? limits[c.plan].callMinutes + Number(c.bonus_minutes_month || 0) : undefined) + (Number(c.bonus_minutes_month) ? `<div class="sub">incl. +${num(c.bonus_minutes_month)} extra</div>` : ''),
         minutes(c.minutes_total),
@@ -88,7 +116,7 @@ export async function renderCustomerDetail(view: HTMLElement, id: string) {
     const sourceKnown = c.signup_ip || c.signup_source || c.signup_user_agent;
     view.innerHTML =
       '<a class="btn-link btn-back" href="#/customers"><span aria-hidden="true">←</span> Back to customers</a>' +
-      pageHeader(c.name || c.email, `${esc(c.email)} · ${planBadge(c.plan)} · signed up ${when(c.created_at)}`) +
+      pageHeader(c.name || c.email, `${esc(c.email)} · ${planBadge(c.plan)}${c.active ? '' : ' <span class="pill bad">Blocked</span>'} · signed up ${when(c.created_at)}`) +
       (flash ? `<div class="flash" role="status">${flash}</div>` : '') +
       manageSection(c, data, planLimit) +
       `<section class="panel"><h2>Usage</h2>${kpis([
@@ -166,11 +194,50 @@ function manageSection(c: any, data: any, planLimit: number | undefined) {
         <button type="submit">Add minutes</button><div class="m-msg" role="status"></div>
         ${grants.length ? `<h4>Extra minutes this month</h4><ul class="grants">${grants.map((g: any) => `<li><span><strong>+${num(g.minutes)} min</strong> · ${esc(g.note || '')}<span class="sub">by ${esc(g.granted_by || '—')}, ${when(g.created_at)}</span></span><button type="button" class="danger small" data-grant="${esc(g.id)}">Remove</button></li>`).join('')}</ul>` : ''}
       </form>
+      ${accessCard(c, data)}
     </div></section>`;
+}
+
+function accessCard(c: any, data: any) {
+  const hasPayments = Number(data.total || 0) > 0 || (c.plan !== 'free' && c.subscription_status === 'active');
+  return `<div class="manage-card access-card">
+    <h3>Account access</h3>
+    ${c.active
+      ? `<form id="m-block"><p class="note"><strong>Block</strong> stops this customer from signing in, signs them out now, and stops their app from starting new chats or calls. Nothing is deleted; you can unblock any time.</p>
+        <label><span>Reason <span class="sub">(saved in the history)</span></span><input name="reason" required maxlength="300" placeholder="e.g. Spam sign-up, abuse, unpaid"></label>
+        <button type="submit" class="danger">Block customer</button><div class="m-msg" role="status"></div></form>`
+      : `<form id="m-block"><p class="warn-box">This customer is <strong>blocked</strong>: they can’t sign in and their app can’t start chats or calls.</p>
+        <label><span>Reason for unblocking <span class="sub">(saved in the history)</span></span><input name="reason" required maxlength="300" placeholder="e.g. Sorted out with the customer"></label>
+        <button type="submit">Unblock customer</button><div class="m-msg" role="status"></div></form>`}
+    <hr>
+    ${!isOwner() ? '<p class="note">Only the owner can delete a customer.</p>'
+      : hasPayments ? '<p class="note"><strong>Delete</strong> isn’t possible: this customer has payment records, which must be kept for accounts and tax. Block them instead.</p>'
+      : `<form id="m-delete"><p class="note"><strong>Delete</strong> permanently removes the account, their project, chat messages and call history. It can’t be undone. Use it for spam or test accounts.</p>
+        <label><span>Type <strong>${esc(c.email)}</strong> to confirm</span><input name="confirmEmail" required autocomplete="off" spellcheck="false"></label>
+        <label><span>Reason <span class="sub">(saved in the history)</span></span><input name="reason" required maxlength="300" placeholder="e.g. Test account"></label>
+        <button type="submit" class="danger">Delete permanently</button><div class="m-msg" role="status"></div></form>`}
+  </div>`;
 }
 
 function wireManage(view: HTMLElement, c: any) {
   const reload = () => void renderCustomerDetail(view, c.id);
+  const block = view.querySelector<HTMLFormElement>('#m-block'), del = view.querySelector<HTMLFormElement>('#m-delete');
+  if (block) block.onsubmit = async (e) => {
+    e.preventDefault();
+    if (c.active && !confirm(`Block ${c.email}? They are signed out now and their app stops working until you unblock them.`)) return;
+    const msg = block.querySelector<HTMLElement>('.m-msg')!, btn = block.querySelector<HTMLButtonElement>('button')!;
+    btn.disabled = true; msg.className = 'm-msg'; msg.textContent = 'Saving…';
+    try { await adminFetch(`/v1/admin/customers/${c.id}/access`, { method: 'POST', body: JSON.stringify({ blocked: !!c.active, reason: block.reason.value }) }); flash = c.active ? 'Customer blocked.' : 'Customer unblocked.'; reload(); }
+    catch (err) { msg.className = 'm-msg error'; msg.textContent = err instanceof Error ? err.message : 'Could not save'; btn.disabled = false; }
+  };
+  if (del) del.onsubmit = async (e) => {
+    e.preventDefault();
+    if (!confirm(`Permanently delete ${c.email} and all their data? This can't be undone.`)) return;
+    const msg = del.querySelector<HTMLElement>('.m-msg')!, btn = del.querySelector<HTMLButtonElement>('button')!;
+    btn.disabled = true; msg.className = 'm-msg'; msg.textContent = 'Deleting…';
+    try { await adminFetch(`/v1/admin/customers/${c.id}`, { method: 'DELETE', body: JSON.stringify({ confirmEmail: del.confirmEmail.value, reason: del.reason.value }) }); location.hash = '#/customers'; }
+    catch (err) { msg.className = 'm-msg error'; msg.textContent = err instanceof Error ? err.message : 'Could not delete'; btn.disabled = false; }
+  };
   const submit = (form: HTMLFormElement, url: string, body: () => any, confirmText?: () => string) => {
     form.onsubmit = async (e) => {
       e.preventDefault();

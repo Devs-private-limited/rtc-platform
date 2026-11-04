@@ -10,9 +10,9 @@ export async function renderOverviewPage(view: HTMLElement) {
     view.innerHTML =
       pageHeader('Overview', `The whole business at a glance. “This month” = ${esc(month)} (UTC).`, '<button class="secondary" id="ov-refresh">Refresh</button>') +
       `<section class="panel"><h2>Customers</h2>${kpis([
-        ['Total customers', num(o.customers), `${num(o.verified_customers)} verified email`],
-        ['New this month', num(o.new_this_month), `${num(o.new_7_days)} in the last 7 days`],
-        ['Active (30 days)', num(o.active_30_days), 'used chat or calls in their app'],
+        ['Total customers', num(o.customers), `${num(o.verified_customers)} verified email`, '#/customers?view=all'],
+        ['New this month', num(o.new_this_month), `${num(o.new_7_days)} in the last 7 days`, '#/customers?joined=month'],
+        ['Active (30 days)', num(o.active_30_days), 'used chat or calls in their app', '#/customers?activity=active30'],
         ['Plans', `${num(plans.free || 0)} / ${num(plans.starter || 0)} / ${num(plans.pro || 0)}`, 'Free / Starter / Pro'],
       ])}</section>` +
       `<section class="panel"><h2>Usage this month</h2>${kpis([
@@ -22,7 +22,7 @@ export async function renderOverviewPage(view: HTMLElement) {
         ['Demo / internal minutes', minutes(o.other_minutes_month), 'demo apps and admin-made projects'],
       ])}</section>` +
       `<section class="panel"><h2>Money</h2>${kpis([
-        ['Active subscriptions', num(o.active_subscriptions), 'paid plans currently active'],
+        ['Active subscriptions', num(o.active_subscriptions), 'paid plans currently active', '#/customers?paid=paid'],
         ['Net revenue this month', moneyList(o.revenue_month, 'net_minor'), 'after refunds'],
         ['Net revenue all time', moneyList(o.revenue_all_time, 'net_minor'), `gross ${moneyList(o.revenue_all_time, 'gross_minor')}`],
       ])}<p class="note">From Dodo Payments webhooks. Gateway fees and payouts are in the Dodo dashboard.</p></section>` +

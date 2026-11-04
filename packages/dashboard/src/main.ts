@@ -523,7 +523,7 @@ function route() {
   const view = root.querySelector<HTMLElement>("#view");
   if (!view) return;
   app = view;
-  const [section = "overview", id] = location.hash.replace(/^#\/?/, "").split("/");
+  const [section = "overview", id] = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
   root.querySelectorAll<HTMLElement>("[data-nav]").forEach((a) => a.classList.toggle("on", a.dataset.nav === section));
   window.scrollTo(0, 0);
   if (section === "customers" && id) return void renderCustomerDetail(view, decodeURIComponent(id));

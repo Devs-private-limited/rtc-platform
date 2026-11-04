@@ -52,9 +52,12 @@ export function usageBar(used: number, limit: number | undefined) {
   return `<div class="usage"><div class="usage-text"><strong>${minutes(used)}</strong><span>of ${num(limit)}</span></div><div class="bar ${tone}"><i style="width:${pct.toFixed(1)}%"></i></div></div>`;
 }
 
-export function kpis(items: [label: string, value: string, hint?: string][]) {
+export function kpis(items: [label: string, value: string, hint?: string, href?: string][]) {
   return `<div class="kpis">${items
-    .map(([l, v, h]) => `<div class="kpi"><span class="kpi-label">${esc(l)}</span><strong class="kpi-value">${v}</strong>${h ? `<span class="kpi-hint">${h}</span>` : ''}</div>`)
+    .map(([l, v, h, href]) => {
+      const inner = `<span class="kpi-label">${esc(l)}</span><strong class="kpi-value">${v}</strong>${h ? `<span class="kpi-hint">${h}</span>` : ''}`;
+      return href ? `<a class="kpi kpi-link" href="${esc(href)}">${inner}<span class="kpi-go">See who →</span></a>` : `<div class="kpi">${inner}</div>`;
+    })
     .join('')}</div>`;
 }
 
