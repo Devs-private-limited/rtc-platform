@@ -50,4 +50,4 @@ Open Portal → Diagnostics and search by exact call ID. Events, calls, quality 
 | HTTP 403 on SFU | Room membership, role, or plan denied the operation. |
 | HTTP 503 on SFU | Verify `SIGNALING_URL` and signaling readiness. |
 
-See [notification setup](MANAGED-PUSH.md) and [startup operations](STARTUP-OPERATIONS.md).
+See [push notification setup](PUSH.md) (each app needs its own Firebase project) and [startup operations](STARTUP-OPERATIONS.md).
