@@ -88,6 +88,16 @@ val result = rtc.stopRecording()
 
 To ring the phone when your app is closed, you need **your own Firebase project**: add your app to it, upload its service-account key in the RTCExpress portal, and register each device. See [docs/PUSH.md](../../docs/PUSH.md) for the full steps and FCM + ConnectionService integration.
 
+Register the device after `init()` (the SDK stores an installation ID and calls the API on a background thread):
+
+```kotlin
+FirebaseMessaging.getInstance().token.addOnSuccessListener { rtc.registerPushDevice(it) }
+// on logout:
+rtc.unregisterPushDevice()
+```
+
+Use `PushClient(context).registerDevice(serverUrl, rtcToken, fcmToken)` from `onNewToken()`. Unanswered calls also produce a **missed-call** notification (`type: rtc_missed_call`); see [docs/PUSH.md](../../docs/PUSH.md#missed-calls).
+
 ## Roadmap
 
 - [x] P2P voice + video

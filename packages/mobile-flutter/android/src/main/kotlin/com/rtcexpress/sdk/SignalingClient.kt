@@ -41,6 +41,17 @@ class SignalingClient(
                 handleMessage(JSONObject(text))
             }
 
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                // 4001/4002: the server rejected the token (missing, invalid or expired).
+                if (code == 4001 || code == 4002) {
+                    listener?.onError(
+                        "Invalid or expired token. Get a new token from your backend and call init() again.",
+                        "invalid_token"
+                    )
+                }
+                webSocket.close(code, null)
+            }
+
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 listener?.onDisconnected()
             }

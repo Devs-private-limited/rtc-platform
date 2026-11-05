@@ -80,3 +80,44 @@ export async function sendCallPush(appId: string, payload: Record<string, unknow
     await db.query(`INSERT INTO push_deliveries (app_id, call_id, installation_id, success, status_code,platform,push_type) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [appId, call.callId, device.installation_id, result.success, result.status,device.platform || 'android',device.push_type || 'alert']);
   }));
 }
+
+/** Missed-call alerts are kept by FCM/APNs for a day, so a phone that was off still shows one when it comes back. */
+export const MISSED_CALL_TTL_SECONDS = 24 * 60 * 60;
+
+export interface MissedCall {
+  callId: string;
+  roomId: string;
+  callerUserId: string;
+  calleeUserId: string;
+  callType: "voice" | "video";
+}
+
+// Sent when a ringing call ends without an answer (ring timeout, or the caller hung up first).
+// Uses the callee's alert tokens, not VoIP tokens: this is an ordinary visible notification.
+export async function sendMissedCallPush(appId: string, call: MissedCall) {
+  const db = getPool();
+  if (!db) return;
+  const devices = await db.query(`SELECT installation_id, token, platform, bundle_id, environment FROM push_devices WHERE app_id = $1 AND user_id = $2 AND push_type = 'alert' AND updated_at > NOW() - INTERVAL '90 days' ORDER BY updated_at DESC LIMIT 10`, [appId, call.calleeUserId]);
+  if (!devices.rowCount) return;
+  const credentials = await pushCredentials(appId).catch(() => null);
+  const data = { type: "rtc_missed_call", callId: call.callId, roomId: call.roomId, fromUserId: call.callerUserId, callType: call.callType };
+  const notification = { title: "Missed call", body: call.callType === "video" ? "You missed a video call." : "You missed a voice call." };
+  const expiresAt = Date.now() + MISSED_CALL_TTL_SECONDS * 1000;
+  await Promise.all(devices.rows.map(async (device) => {
+    let result: PushResult = { success: false, status: null, retryable: false };
+    try {
+      if (device.platform === "ios") {
+        const ios = await apnsCredentials(appId, device.bundle_id, device.environment);
+        if (!ios) return;
+        result = await sendApns(ios, device.token, "alert", { aps: { alert: notification, sound: "default" }, ...data }, expiresAt);
+      } else {
+        if (!credentials) return;
+        result = await sendFcm(credentials, device.token, data, MISSED_CALL_TTL_SECONDS, notification);
+      }
+      if (result.invalidToken) {
+        await db.query(`DELETE FROM push_devices WHERE app_id = $1 AND installation_id = $2 AND token = $3`, [appId, device.installation_id, device.token]);
+      }
+    } catch { /* Persist only status, never device tokens or credentials. */ }
+    await db.query(`INSERT INTO push_deliveries (app_id, call_id, installation_id, success, status_code,platform,push_type) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [appId, call.callId, device.installation_id, result.success, result.status, device.platform || "android", "alert"]);
+  }));
+}

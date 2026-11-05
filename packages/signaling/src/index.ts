@@ -44,7 +44,7 @@ import { tenantKey, scopedRooms, scopedRoles } from "./tenant-scope.js";
 import { registerMediaAuthorizeRoutes } from "./routes/media-authorize.js";
 import { ProjectTaskQueue } from "./task-queue.js";
 import { registerPushRoutes } from "./routes/push.js";
-import { sendCallPush } from "./push.js";
+import { sendCallPush, sendMissedCallPush } from "./push.js";
 import { startMessagePushWorker, removeChatSubscription } from './chat-notifications.js';
 import { registerAccountSecurityRoutes } from "./routes/account-security.js";
 import { registerDiagnosticsRoutes } from "./routes/diagnostics.js";
@@ -257,6 +257,7 @@ const ringingTimer = setInterval(() => {
       }).catch((err) => app.log.error({ err }, "Call timeout delivery failed"));
     }
     dispatchSafely(call.appId, "call.failed", { ...call, reason: "no_answer" });
+    void sendMissedCallPush(call.appId, call).catch(() => app.log.error("Missed-call push failed; check push credentials and delivery records"));
   }
 }, 1000);
 ringingTimer.unref();

@@ -21,6 +21,7 @@ import { canModerate, canPublish, isAudience } from "./room-roles.js";
 import { joinMediaSession, leaveMediaSession } from "./media-sessions.js";
 import { MAX_MESSAGE_LENGTH, saveMessage } from "./messages.js";
 import { removeChatSubscription } from './chat-notifications.js';
+import { sendMissedCallPush } from "./push.js";
 import { endCallSession, startCallSession } from "./metering.js";
 import { saveRecording } from "./recordings.js";
 import { saveQualityReport } from "./quality.js";
@@ -307,6 +308,10 @@ export async function handleClientMessage(ctx: HandlerContext) {
 
       if (message.type === "call_end" || message.type === "call_reject") {
         clearCall(claims.appId, payload.callId);
+      }
+      // The caller hung up before the callee answered: tell the callee they missed a call.
+      if (message.type === "call_end" && call.phase === "ringing" && userId === call.callerUserId) {
+        void sendMissedCallPush(claims.appId, call).catch(() => undefined);
       }
 
       if (message.type === "call_end") {
