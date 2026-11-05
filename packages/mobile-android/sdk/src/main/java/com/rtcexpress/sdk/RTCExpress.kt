@@ -44,6 +44,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     private var sfuUrl: String? = null
     // From /v1/config: true only when the app's plan includes server-relayed (SFU) calls.
     private var voiceSfuAllowed = false
+    private var videoSfuAllowed = false
+    private var planKnown = false
     private var iceServers = listOf(org.webrtc.PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
     private var inVoiceRoom = false
     private var inVideoRoom = false
@@ -83,6 +85,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
             val config = configClient.fetchPlatformConfig(serverUrl, appId)
             sfuUrl = config.sfuUrl
             voiceSfuAllowed = config.voiceSfu
+            videoSfuAllowed = config.videoSfu
+            planKnown = true
         }
     }
 
@@ -136,6 +140,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
 
     fun joinVoiceRoom() {
         val room = roomId ?: throw IllegalStateException("Join a room first")
+        requirePlan(voiceSfuAllowed, "Group voice calls")
         val url = sfuUrl ?: throw IllegalStateException("SFU not available")
         if (sfu == null) {
             sfu = SfuMediaEngine(
@@ -147,7 +152,13 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 onRemoteVideo = { track -> listener?.onRemoteVideo(track) }
             )
         }
-        sfu?.joinRoom(room, SfuJoinOptions(audio = true, video = false, announceToRoom = true))
+        try {
+            sfu?.joinRoom(room, SfuJoinOptions(audio = true, video = false, announceToRoom = true))
+        } catch (e: Exception) {
+            sfu?.destroy()
+            sfu = null
+            throw IllegalStateException("Could not join group voice: ${e.message}")
+        }
         inVoiceRoom = true
         signaling.send("join_media", JSONObject().put("roomId", room).put("kind", "voice"))
         listener?.onVoiceRoomJoined(room)
@@ -169,6 +180,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
 
     fun joinVideoRoom() {
         val room = roomId ?: throw IllegalStateException("Join a room first")
+        requirePlan(videoSfuAllowed, "Group video calls")
         val url = sfuUrl ?: throw IllegalStateException("SFU not available")
         if (sfu == null) {
             sfu = SfuMediaEngine(
@@ -180,7 +192,13 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 onRemoteVideo = { track -> listener?.onRemoteVideo(track) }
             )
         }
-        sfu?.joinRoom(room, SfuJoinOptions(audio = true, video = true, announceToRoom = true))
+        try {
+            sfu?.joinRoom(room, SfuJoinOptions(audio = true, video = true, announceToRoom = true))
+        } catch (e: Exception) {
+            sfu?.destroy()
+            sfu = null
+            throw IllegalStateException("Could not join group video: ${e.message}")
+        }
         inVoiceRoom = true
         inVideoRoom = true
         signaling.send("join_media", JSONObject().put("roomId", room).put("kind", "video"))
@@ -393,7 +411,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     }
 
     override fun onError(message: String, code: String?) {
-        if (code in listOf("call_busy", "user_offline") && activeCall?.isCaller == true) {
+        // The server refused our call (busy, offline, not in the plan...): don't leave it ringing.
+        if (code in listOf("call_busy", "user_offline", "plan_feature_denied", "invalid_call") && activeCall?.isCaller == true) {
             cleanupCall("rejected")
         }
         listener?.onError(message)
@@ -405,6 +424,13 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         // Otherwise both sides use peer-to-peer, so a phone and a browser always match.
         if (!voiceSfuAllowed || sfuUrl.isNullOrBlank()) return "p2p"
         return "sfu"
+    }
+
+    /** Clear error before trying media the plan does not include (the server enforces the same rule). */
+    private fun requirePlan(allowed: Boolean, name: String) {
+        if (planKnown && !allowed) {
+            throw IllegalStateException("$name are not included in your current plan. Upgrade your plan to use this feature.")
+        }
     }
 
     /** Starts SFU media for a call; if that fails, ends the call for both sides with a clear error. */

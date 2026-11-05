@@ -4,6 +4,7 @@ import type {
   ClientMessage,
   MediaParticipantPayload,
   MessageHistoryPage,
+  PlatformConfig,
   RoomMessagePayload,
   RoomRole,
   ServerMessage,
@@ -50,6 +51,8 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
   private mediaModePref: MediaMode = "auto";
   private resolvedMediaMode: MediaMode = "p2p";
   private sfuUrl: string | null = null;
+  /** Plan features from /v1/config (null = unknown, e.g. config could not be loaded: the server still checks). */
+  private features: PlatformConfig["features"] | null = null;
   private iceServers: RTCIceServer[] = DEFAULT_STUN_SERVERS;
 
   private p2p: P2pMediaEngine | null = null;
@@ -115,8 +118,10 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
       const config = await fetchPlatformConfig(this.serverUrl, this.appId, this.token);
       this.iceServers = config.iceServers;
       this.sfuUrl = config.sfuUrl;
+      this.features = config.features;
       this.resolvedMediaMode = this.resolveMediaMode(config.features.voiceSfu);
     } catch {
+      this.features = null;
       this.iceServers = DEFAULT_STUN_SERVERS;
       this.resolvedMediaMode = this.mediaModePref === "sfu" ? "p2p" : this.mediaModePref;
     }
@@ -441,6 +446,9 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
           if (this.activeCall?.isCaller) {
             this.cleanupCall("rejected");
           }
+        } else if ((payload.code === "plan_feature_denied" || payload.code === "invalid_call") && this.activeCall?.isCaller) {
+          // The server refused our call (e.g. video not in the plan): don't leave it "ringing" forever.
+          this.cleanupCall("rejected");
         }
         this.emit("error", payload);
         break;
@@ -616,6 +624,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
 
   async joinVoiceRoom() {
     if (!this.roomId) throw new Error("Join a room first");
+    this.requirePlanFeature("voiceSfu", "Group voice calls");
     if (!this.sfuUrl) throw new Error("SFU not available. Start media-sfu service.");
     await this.getSfu().joinRoom(this.roomId, { announceToRoom: true, audio: true, video: false });
     this.inVoiceRoom = true;
@@ -644,6 +653,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
 
   async joinVideoRoom() {
     if (!this.roomId) throw new Error("Join a room first");
+    this.requirePlanFeature("videoSfu", "Group video calls");
     if (!this.sfuUrl) throw new Error("SFU not available. Start media-sfu service.");
     await this.getSfu().joinRoom(this.roomId, { announceToRoom: true, audio: true, video: true });
     this.inVideoRoom = true;
@@ -678,9 +688,19 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
     return this.startCall(peerUserId, "video");
   }
 
+  /** Clear error before trying media the plan does not include (the server enforces the same rule). */
+  private requirePlanFeature(feature: keyof PlatformConfig["features"], name: string) {
+    if (this.features && !this.features[feature]) {
+      const err = new Error(`${name} are not included in your current plan. Upgrade your plan to use this feature.`) as Error & { code?: string };
+      err.code = "plan_feature_denied";
+      throw err;
+    }
+  }
+
   private async startCall(peerUserId: string, callType: CallType) {
     if (!this.roomId) throw new Error("Join a room first");
     if (this.activeCall) throw new Error("Already in a call");
+    if (callType === "video") this.requirePlanFeature("videoP2P", "Video calls");
     const callId = randomId();
     this.activeCall = { callId, peerUserId, roomId: this.roomId, isCaller: true, callType };
     this.emit("callState", {

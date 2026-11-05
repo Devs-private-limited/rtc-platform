@@ -61,6 +61,7 @@ export type RTCEventName =
   | "callInvite"
   | "callState"
   | "remoteVideo"
+  | "groupMedia"
   | "diagnostics"
   | "error";
 
@@ -104,6 +105,24 @@ export class RTCExpress {
 
   endCall(): void {
     Native.endCall();
+  }
+
+  /** Join group voice in the current room (Android; plan must include group voice). Errors arrive as "error" events. */
+  joinVoiceRoom(): void {
+    Native.joinVoiceRoom();
+  }
+
+  leaveVoiceRoom(): void {
+    Native.leaveVoiceRoom();
+  }
+
+  /** Join group video in the current room (Android; plan must include group video). RTCVideoView shows the newest remote camera. */
+  joinVideoRoom(): void {
+    Native.joinVideoRoom();
+  }
+
+  leaveVideoRoom(): void {
+    Native.leaveVideoRoom();
   }
 
   muteMicrophone(muted: boolean): void {

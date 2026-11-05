@@ -117,6 +117,28 @@ class RTCExpressModule(private val reactContext: ReactApplicationContext) :
         runRtc { rtc?.endCall() }
     }
 
+    /** Group voice in the current room (server-relayed, needs a plan with group voice). */
+    @ReactMethod
+    fun joinVoiceRoom() {
+        runRtc { rtc?.joinVoiceRoom() }
+    }
+
+    @ReactMethod
+    fun leaveVoiceRoom() {
+        runRtc { rtc?.leaveVoiceRoom() }
+    }
+
+    /** Group video in the current room (needs a plan with group video). */
+    @ReactMethod
+    fun joinVideoRoom() {
+        runRtc { rtc?.joinVideoRoom() }
+    }
+
+    @ReactMethod
+    fun leaveVideoRoom() {
+        runRtc { rtc?.leaveVideoRoom() }
+    }
+
     @ReactMethod
     fun muteMicrophone(muted: Boolean) {
         rtc?.muteMicrophone(muted)
@@ -192,6 +214,22 @@ class RTCExpressModule(private val reactContext: ReactApplicationContext) :
                 putString("callType", update.callType)
             }
         )
+    }
+
+    override fun onVoiceRoomJoined(roomId: String) {
+        emit("groupMedia", Arguments.createMap().apply { putString("roomId", roomId); putString("kind", "voice"); putBoolean("joined", true) })
+    }
+
+    override fun onVoiceRoomLeft(roomId: String) {
+        emit("groupMedia", Arguments.createMap().apply { putString("roomId", roomId); putString("kind", "voice"); putBoolean("joined", false) })
+    }
+
+    override fun onVideoRoomJoined(roomId: String) {
+        emit("groupMedia", Arguments.createMap().apply { putString("roomId", roomId); putString("kind", "video"); putBoolean("joined", true) })
+    }
+
+    override fun onVideoRoomLeft(roomId: String) {
+        emit("groupMedia", Arguments.createMap().apply { putString("roomId", roomId); putString("kind", "video"); putBoolean("joined", false) })
     }
 
     override fun onError(message: String) {

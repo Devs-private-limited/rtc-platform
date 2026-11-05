@@ -16,9 +16,6 @@ import org.mediasoup.droid.Transport
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
 import org.webrtc.Camera2Enumerator
-import org.webrtc.DefaultVideoDecoderFactory
-import org.webrtc.DefaultVideoEncoderFactory
-import org.webrtc.EglBase
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.SurfaceTextureHelper
@@ -35,8 +32,12 @@ class SfuMediaEngine(
     private val onRemoteVideo: (VideoTrack) -> Unit
 ) {
     private val http = OkHttpClient()
-    private val eglBase = EglBase.create()
+    // Shared with P2P calls and CallVideoView: video frames can only be drawn by views
+    // that use the same EGL context, so SFU video must use the same factory.
     private val factory: PeerConnectionFactory
+    private var audioSource: AudioSource? = null
+    private var videoSource: VideoSource? = null
+    private var captureHelper: SurfaceTextureHelper? = null
     private var device: Device? = null
     private var sendTransport: SendTransport? = null
     private var recvTransport: RecvTransport? = null
@@ -51,14 +52,8 @@ class SfuMediaEngine(
 
     init {
         MediasoupClient.initialize(context)
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(context)
-                .createInitializationOptions()
-        )
-        factory = PeerConnectionFactory.builder()
-            .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
-            .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
-            .createPeerConnectionFactory()
+        WebRtcPeerFactory.warmUp(context)
+        factory = WebRtcPeerFactory.factory()
     }
 
     fun joinRoom(roomId: String, options: SfuJoinOptions) {
@@ -71,7 +66,9 @@ class SfuMediaEngine(
         val rtpCapabilities = joinJson.getJSONObject("rtpCapabilities").toString()
 
         val mediasoupDevice = Device()
-        mediasoupDevice.load(rtpCapabilities, null)
+        // Same factory (and EGL context) as CallVideoView, so remote SFU video can be drawn.
+        val pcOptions = org.mediasoup.droid.PeerConnection.Options().apply { setFactory(factory) }
+        mediasoupDevice.load(rtpCapabilities, pcOptions)
         device = mediasoupDevice
 
         createSendTransport(base, roomId, options)
@@ -117,12 +114,22 @@ class SfuMediaEngine(
         recvTransport = null
         device?.dispose()
         device = null
-        videoCapturer?.stopCapture()
+        CallVideoTracks.update(true, null)
+        CallVideoTracks.update(false, null)
+        runCatching { videoCapturer?.stopCapture() }
         videoCapturer?.dispose()
+        videoCapturer = null
+        captureHelper?.dispose()
+        captureHelper = null
         videoTrack?.dispose()
+        videoTrack = null
+        videoSource?.dispose()
+        videoSource = null
         audioTrack?.dispose()
-        factory.dispose()
-        eglBase.release()
+        audioTrack = null
+        audioSource?.dispose()
+        audioSource = null
+        // The factory is shared (WebRtcPeerFactory): never dispose it here.
         roomId = null
     }
 
@@ -215,8 +222,9 @@ class SfuMediaEngine(
     private fun publishCameraMic(options: SfuJoinOptions) {
         val send = sendTransport ?: return
         if (options.audio) {
-            val audioSource = factory.createAudioSource(MediaConstraints())
-            audioTrack = factory.createAudioTrack("audio0", audioSource)
+            val source = factory.createAudioSource(MediaConstraints())
+            audioSource = source
+            audioTrack = factory.createAudioTrack("audio0", source)
             micProducer = send.produce({ }, audioTrack, null, null, null)
         }
         if (options.video) {
@@ -265,18 +273,24 @@ class SfuMediaEngine(
         )
         consumers[producerId] = consumer
         val track = consumer.track
-        if (track is VideoTrack) onRemoteVideo(track)
+        if (track is VideoTrack) {
+            CallVideoTracks.update(false, track) // newest remote camera shows in RTCVideoView
+            onRemoteVideo(track)
+        }
     }
 
     private fun startCamera() {
         val enumerator = Camera2Enumerator(context)
         val deviceName = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) } ?: return
         videoCapturer = enumerator.createCapturer(deviceName, null)
-        val helper = SurfaceTextureHelper.create("sfu-capture", eglBase.eglBaseContext)
-        val videoSource = factory.createVideoSource(videoCapturer!!.isScreencast)
-        videoCapturer!!.initialize(helper, context, videoSource.capturerObserver)
+        val helper = SurfaceTextureHelper.create("sfu-capture", WebRtcPeerFactory.egl().eglBaseContext)
+        captureHelper = helper
+        val source = factory.createVideoSource(videoCapturer!!.isScreencast)
+        videoSource = source
+        videoCapturer!!.initialize(helper, context, source.capturerObserver)
         videoCapturer!!.startCapture(640, 480, 24)
-        videoTrack = factory.createVideoTrack("video0", videoSource)
+        videoTrack = factory.createVideoTrack("video0", source)
+        CallVideoTracks.update(true, videoTrack) // self-view in RTCVideoView(local)
     }
 
     private fun postJson(url: String, body: JSONObject): JSONObject {
