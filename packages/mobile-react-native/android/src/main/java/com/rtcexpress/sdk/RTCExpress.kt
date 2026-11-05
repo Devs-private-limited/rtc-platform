@@ -27,6 +27,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     private val tokenClient = TokenClient()
     private val configClient = ConfigClient()
     private val historyClient = HistoryClient()
+    private val pushClient = PushClient(context)
     private val callRecorder = CallRecorder(context)
     private var p2p: P2pMediaEngine? = null
     private var sfu: SfuMediaEngine? = null
@@ -106,6 +107,28 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
 
     fun getMessageHistory(roomId: String, before: String? = null, limit: Int = 50): MessageHistoryPage {
         return historyClient.getMessageHistory(serverUrl, token, roomId, before, limit)
+    }
+
+    /**
+     * Register this phone so the signed-in user can receive incoming-call and missed-call
+     * notifications while the app is closed. Call after init(), and again whenever Firebase
+     * gives a new token. Runs in the background; the callback runs on the main thread.
+     */
+    fun registerPushDevice(fcmToken: String, callback: ((Result<Unit>) -> Unit)? = null) {
+        check(serverUrl.isNotBlank() && token.isNotBlank()) { "Call init() before registerPushDevice()" }
+        pushClient.registerDevice(serverUrl, token, fcmToken, callback)
+    }
+
+    /** Stop notifications for this user on this phone. Call on logout, before destroy(). */
+    fun unregisterPushDevice(callback: ((Result<Unit>) -> Unit)? = null) {
+        check(serverUrl.isNotBlank() && token.isNotBlank()) { "Call init() before unregisterPushDevice()" }
+        pushClient.unregisterDevice(serverUrl, token, callback)
+    }
+
+    /** Optional: report when the app goes to the background or comes back. */
+    fun setPushAppState(background: Boolean, callback: ((Result<Unit>) -> Unit)? = null) {
+        if (serverUrl.isBlank() || token.isBlank()) return
+        pushClient.setAppState(serverUrl, token, background, callback)
     }
 
     fun joinVoiceRoom() {

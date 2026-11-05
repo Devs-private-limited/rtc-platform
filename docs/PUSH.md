@@ -54,6 +54,38 @@ Do not enable both options for the same device unless the client deduplicates by
 
 Register webhooks in the dashboard **Webhooks** tab or via admin API.
 
+## Android — register the device (SDK helper)
+
+The Android SDK registers the phone for you. After login and `init()`:
+
+```kotlin
+FirebaseMessaging.getInstance().token.addOnSuccessListener { fcmToken ->
+    rtc.registerPushDevice(fcmToken) { result ->
+        result.onFailure { Log.w("RTC", "Push registration failed: ${it.message}") }
+    }
+}
+```
+
+When Firebase rotates the token, register again. In `FirebaseMessagingService.onNewToken()` you may not have an `RTCExpress` instance, so use `PushClient` with the user's current RTC token:
+
+```kotlin
+override fun onNewToken(token: String) {
+    val rtcToken = myTokenStore.currentRtcToken() ?: return   // not signed in: register after login
+    PushClient(applicationContext).registerDevice(SERVER_URL, rtcToken, token)
+}
+```
+
+On logout, before clearing the user's RTC token: `rtc.unregisterPushDevice()`. Optional: `rtc.setPushAppState(background = true/false)` from your lifecycle observer. Calls run on a background thread; callbacks arrive on the main thread. The SDK keeps a random installation ID on the device.
+
+## Missed calls
+
+If a ringing call ends unanswered (60-second timeout, or the caller hangs up first), RTCExpress sends the callee a normal notification kept for 24 hours, so a phone that was off still shows it when it comes back:
+
+- Android (FCM): `notification` = "Missed call" / "You missed a voice call." plus data `type: rtc_missed_call`, `callId`, `roomId`, `fromUserId`, `callType`. While your app is in the background, Android shows it automatically. In the foreground, `onMessageReceived` gets it, so show your own notification (for example with the caller's name).
+- iOS (APNs): an alert push to the device's **alert** token (not VoIP), with the same fields.
+
+It is sent only to devices registered with `POST /v1/push/devices`.
+
 ## Android — FCM data message
 
 Example payload your server sends via Firebase:
