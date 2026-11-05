@@ -38,7 +38,13 @@ class SignalingClient(
             .build()
         socket = http.newWebSocket(request, object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) {
-                handleMessage(JSONObject(text))
+                // An error while handling one message must not close the connection
+                // (OkHttp drops the socket if this callback throws).
+                try {
+                    handleMessage(JSONObject(text))
+                } catch (e: Exception) {
+                    listener?.onError(e.message ?: "Could not handle a server message")
+                }
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {

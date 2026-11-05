@@ -42,6 +42,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
 
     private var mediaModePref = "p2p"
     private var sfuUrl: String? = null
+    // From /v1/config: true only when the app's plan includes server-relayed (SFU) calls.
+    private var voiceSfuAllowed = false
     private var iceServers = listOf(org.webrtc.PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
     private var inVoiceRoom = false
     private var inVideoRoom = false
@@ -80,6 +82,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         runCatching {
             val config = configClient.fetchPlatformConfig(serverUrl, appId)
             sfuUrl = config.sfuUrl
+            voiceSfuAllowed = config.voiceSfu
         }
     }
 
@@ -231,7 +234,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         val call = activeCall ?: throw IllegalStateException("No incoming call")
         signaling.send("call_accept", callPayload(call, call.peerUserId))
         if (resolvedMediaMode() == "sfu") {
-            startSfuCall(call)
+            if (!startSfuCallOrEnd(call)) return
         } else {
             ensureP2p(call.callType == "video")
         }
@@ -240,13 +243,14 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
 
     fun rejectCall() {
         val call = activeCall ?: return
-        signaling.send("call_reject", callPayload(call, call.peerUserId))
+        // Always clean up locally, even if the connection already dropped.
+        runCatching { signaling.send("call_reject", callPayload(call, call.peerUserId)) }
         cleanupCall("rejected")
     }
 
     fun endCall() {
         val call = activeCall ?: return
-        signaling.send("call_end", callPayload(call, call.peerUserId))
+        runCatching { signaling.send("call_end", callPayload(call, call.peerUserId)) }
         cleanupCall("ended")
     }
 
@@ -350,7 +354,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     override fun onCallAccept(payload: JSONObject) {
         val call = activeCall ?: return
         if (resolvedMediaMode() == "sfu") {
-            startSfuCall(call)
+            if (!startSfuCallOrEnd(call)) return
             emitCallState("connected", call.peerUserId, call.roomId, call.callId, call.callType)
             return
         }
@@ -397,9 +401,23 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
 
     private fun resolvedMediaMode(): String {
         if (mediaModePref == "p2p") return "p2p"
-        if (mediaModePref == "sfu" && !sfuUrl.isNullOrBlank()) return "sfu"
-        if (mediaModePref == "auto" && !sfuUrl.isNullOrBlank()) return "sfu"
-        return "p2p"
+        // Same rule as the Web SDK: SFU only when the server has one AND the plan allows it.
+        // Otherwise both sides use peer-to-peer, so a phone and a browser always match.
+        if (!voiceSfuAllowed || sfuUrl.isNullOrBlank()) return "p2p"
+        return "sfu"
+    }
+
+    /** Starts SFU media for a call; if that fails, ends the call for both sides with a clear error. */
+    private fun startSfuCallOrEnd(call: ActiveCall): Boolean {
+        return try {
+            startSfuCall(call)
+            true
+        } catch (e: Exception) {
+            runCatching { signaling.send("call_end", callPayload(call, call.peerUserId)) }
+            cleanupCall("failed")
+            listener?.onError("Call could not start: ${e.message ?: "media server error"}")
+            false
+        }
     }
 
     private fun startSfuCall(call: ActiveCall) {

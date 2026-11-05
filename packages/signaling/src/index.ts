@@ -44,7 +44,7 @@ import { tenantKey, scopedRooms, scopedRoles } from "./tenant-scope.js";
 import { registerMediaAuthorizeRoutes } from "./routes/media-authorize.js";
 import { ProjectTaskQueue } from "./task-queue.js";
 import { registerPushRoutes } from "./routes/push.js";
-import { sendCallPush, sendMissedCallPush } from "./push.js";
+import { sendCallPush, sendMissedCallPush, sendCallCancelPush } from "./push.js";
 import { startMessagePushWorker, removeChatSubscription } from './chat-notifications.js';
 import { registerAccountSecurityRoutes } from "./routes/account-security.js";
 import { registerDiagnosticsRoutes } from "./routes/diagnostics.js";
@@ -245,6 +245,9 @@ userNotifier.sendToUser = (appId, userId, message) => relay.sendToUser(tenantKey
 
 function dispatchSafely(appId: string, type: string, payload: Record<string, unknown>) {
   if (type === "call.ringing") void sendCallPush(appId, payload).catch(() => app.log.error("Call push failed; check FCM configuration and push delivery records"));
+  if (type === "call.ended" || type === "call.failed" || type === "call.connected") {
+    void sendCallCancelPush(appId, payload.callId, typeof payload.reason === "string" ? payload.reason : type.slice(5)).catch(() => app.log.error("Call cancel push failed"));
+  }
   void dispatchEvent(appId, type, payload).catch((err) => app.log.error({ err }, "Event dispatch failed"));
 }
 

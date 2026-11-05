@@ -7,6 +7,8 @@ import { findUserCall } from "./call-state.js";
 import { storedPushCredentials, apnsCredentials, type FirebaseCredentials as ServiceAccount } from "./push-credentials.js";
 import { sendApns, type PushResult } from './apns.js';
 const accessTokens = new Map<string, { token: string; expires: number }>();
+/** Ringing calls we sent an Android push for (key appId:callId -> callee), so we can cancel the ringing later. */
+const pushedRingingCalls = new Map<string, { appId: string; userId: string; expiresAt: number }>();
 
 export async function pushCredentials(appId: string): Promise<ServiceAccount | null> {
   const stored = await storedPushCredentials(appId);
@@ -72,7 +74,11 @@ export async function sendCallPush(appId: string, payload: Record<string, unknow
         const ios=await apnsCredentials(appId,device.bundle_id,device.environment);
         if(!ios)return;
         result=await sendApns(ios,device.token,'voip',{aps:{},...data},Date.now()+ttl*1000);
-      } else {if(!credentials)return;result=await sendFcm(credentials,device.token,data,ttl);}
+      } else {
+        if(!credentials)return;
+        result=await sendFcm(credentials,device.token,data,ttl);
+        if(result.success) pushedRingingCalls.set(`${appId}:${call.callId}`,{appId,userId:call.calleeUserId,expiresAt:call.ringingExpiresAt});
+      }
       if (result.invalidToken) {
         await db.query(`DELETE FROM push_devices WHERE app_id = $1 AND installation_id = $2 AND token = $3`, [appId, device.installation_id, device.token]);
       }
@@ -120,4 +126,29 @@ export async function sendMissedCallPush(appId: string, call: MissedCall) {
     } catch { /* Persist only status, never device tokens or credentials. */ }
     await db.query(`INSERT INTO push_deliveries (app_id, call_id, installation_id, success, status_code,platform,push_type) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [appId, call.callId, device.installation_id, result.success, result.status, device.platform || "android", "alert"]);
   }));
+}
+
+/**
+ * The call stopped ringing (caller hung up, callee declined or answered, or no answer).
+ * Tell the callee's Android phones to stop the ringing notification: without this a phone
+ * that got the call by push (app closed) keeps ringing until the timeout.
+ */
+export async function sendCallCancelPush(appId: string, callId: unknown, reason: string) {
+  if (typeof callId !== "string") return;
+  const now = Date.now();
+  for (const [key, entry] of pushedRingingCalls) if (entry.expiresAt + 60_000 < now) pushedRingingCalls.delete(key);
+  const key = `${appId}:${callId}`;
+  const entry = pushedRingingCalls.get(key);
+  if (!entry) return;
+  pushedRingingCalls.delete(key);
+  const db = getPool();
+  const credentials = await pushCredentials(appId).catch(() => null);
+  if (!db || !credentials) return;
+  const devices = await db.query(`SELECT token FROM push_devices WHERE app_id = $1 AND user_id = $2 AND platform = 'android' AND updated_at > NOW() - INTERVAL '90 days' ORDER BY updated_at DESC LIMIT 10`, [appId, entry.userId]);
+  await Promise.all(devices.rows.map((device) => sendFcm(credentials, device.token, { type: "rtc_call_cancel", callId, reason }, 60)));
+}
+
+/** Test helper */
+export function pushedRingingCallCount() {
+  return pushedRingingCalls.size;
 }

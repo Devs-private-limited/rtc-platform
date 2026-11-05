@@ -51,6 +51,8 @@ public final class RTCExpress: SignalingListener {
     private var roomId: String?
     private var mediaModePref = "p2p"
     private var sfuUrl: String?
+    // From /v1/config: true only when the app's plan includes server-relayed (SFU) calls.
+    private var voiceSfuAllowed = false
     private var inVoiceRoom = false
     private var inVideoRoom = false
 
@@ -78,6 +80,7 @@ public final class RTCExpress: SignalingListener {
         Task {
             if let config = try? await PlatformApi.fetchPlatformConfig(serverUrl: serverUrl, appId: appId) {
                 sfuUrl = config.sfuUrl
+                voiceSfuAllowed = config.voiceSfu
             }
         }
     }
@@ -299,7 +302,8 @@ public final class RTCExpress: SignalingListener {
 
     private func resolvedMediaMode() -> String {
         if mediaModePref == "p2p" { return "p2p" }
-        if sfuUrl != nil { return "sfu" }
+        // Same rule as the Web SDK: SFU only when the server has one AND the plan allows it.
+        if voiceSfuAllowed && sfuUrl != nil { return "sfu" }
         return "p2p"
     }
 
