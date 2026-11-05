@@ -35,5 +35,5 @@ Call state, role state, pending invites, and project task queues are still in pr
 
 - Payment checkout, subscriptions, renewal/expiry, and the business policy for hard minute cutoffs versus overage.
 - A unified billing policy for one-to-one call minutes versus group participant-minutes; group session usage remains separately tracked.
-- Managed Firebase/APNs delivery and device token registration. The webhook can trigger a customer's configured notification backend; it is not itself a phone push notification.
+- ~~Managed Firebase/APNs delivery and device token registration.~~ Implemented later: see [PUSH.md](PUSH.md) and [OFFLINE-NOTIFICATIONS.md](OFFLINE-NOTIFICATIONS.md). Real-device testing is still pending.
 - Device verification of background/terminated-app incoming calls and the updated signaling/media flows before production rollout.

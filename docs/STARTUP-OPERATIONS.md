@@ -14,7 +14,7 @@ Run `node scripts/restore-drill.mjs /path/to/backup.dump` to restore into a new 
 
 ## Optional provider configuration
 
-- Android push: `FCM_CONFIG_FILE`, pointing to a read-only mounted service-account mapping. See [push setup](MANAGED-PUSH.md).
+- Push notifications: set `PUSH_CREDENTIALS_KEY` (64 hex characters, backed up outside the repository) so customers can upload their own Firebase service-account key and APNs `.p8` key in the portal (Service management → In-app chat). `FCM_CONFIG_FILE` is an optional operator-only fallback for Android. See [push setup](PUSH.md) and [mobile notifications](OFFLINE-NOTIFICATIONS.md).
 - Account email: `RESEND_API_KEY`, `EMAIL_FROM` (a provider-verified sender), `PUBLIC_WEBSITE_URL` (HTTPS website origin). Email verification/reset use [Resend's sending API](https://resend.com/docs/api-reference/emails/send-email), with hashed single-use 30-minute tokens. Request/consume routes are rate-limited. Test a reset email after deployment before relying on this flow.
 - Secret rotation and password changes revoke existing portal sessions. RTC tokens are not revoked immediately; they expire normally. Email verification records status but is not yet a mandatory access gate for existing users.
 
@@ -50,7 +50,7 @@ Database integration checks are wired into CI but were not run locally because a
 
 - Docker/PostgreSQL restore and migration integration checks on staging.
 - macOS/iOS compilation and real-device cross-platform testing.
-- Firebase/APNs account setup, incoming-call UI integration, and actual delivery tests. APNs sender is not implemented.
+- Real-device push tests: Android (background, swiped away, locked) and iOS (PushKit/CallKit). The FCM and APNs senders and portal key upload are implemented; delivery has only been tested with mocked providers.
 - Durable call recovery/shared state, multi-instance coordination, load tests, and historical uptime monitoring.
 - Multiple projects/team roles per customer account.
 - Payment checkout and the subscription/cutoff/overage policy, deferred by request.
