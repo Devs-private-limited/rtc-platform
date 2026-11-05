@@ -86,7 +86,7 @@ val result = rtc.stopRecording()
 
 ## Push notifications
 
-See [docs/PUSH.md](../../docs/PUSH.md) for FCM + ConnectionService integration.
+To ring the phone when your app is closed, you need **your own Firebase project**: add your app to it, upload its service-account key in the RTCExpress portal, and register each device. See [docs/PUSH.md](../../docs/PUSH.md) for the full steps and FCM + ConnectionService integration.
 
 ## Roadmap
 
