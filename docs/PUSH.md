@@ -2,22 +2,39 @@
 
 RTCExpress delivers **in-app** call invites over WebSocket. When your app is backgrounded or killed, you need **FCM (Android)** or **APNs + PushKit (iOS)** to wake the app and show a ring UI.
 
-## Architecture
+## Required: each customer app needs its own Firebase project
+
+FCM device tokens belong to the Firebase project the app is built with (`google-services.json`). RTCExpress can only send to them with **that same project's** service-account key. So every customer creates their own Firebase project. RTCExpress's own Firebase project is only for our demo/test apps. End users never set up Firebase.
+
+## Option A (recommended): RTCExpress sends the push (managed push)
 
 ```
-Customer books ride
-    → Your backend knows customerId + driverId
-    → Driver app backgrounded
-    → Caller taps "Call driver"
-    → Your backend sends FCM/APNs data push to driver
-    → Driver app wakes → shows incoming call UI → RTCExpress.acceptCall()
+Caller taps "Call"
+    → RTCExpress signaling looks up callee's registered devices
+    → Sends FCM (Android) / APNs VoIP (iOS) using the customer's uploaded key
+    → Callee app wakes → shows incoming call UI → reconnects → acceptCall()
 ```
 
-The RTC platform **does not** send mobile push notifications itself. Your backend should:
+Customer setup, once per app:
+
+1. Create a Firebase project and add the Android app with its exact package name.
+2. Put `google-services.json` in the app and add `firebase-messaging`.
+3. Firebase console → Project settings → Service accounts → **Generate new private key**.
+4. Upload that JSON in the customer portal: **Service management → In-app chat → Android offline push**. Do not upload `google-services.json`. For iOS, upload an APNs `.p8` key with the Bundle ID.
+5. After login and on every token refresh, register the device: `POST /v1/push/devices` (see [OFFLINE-NOTIFICATIONS.md](OFFLINE-NOTIFICATIONS.md)). Unregister on logout.
+6. Handle the `rtc_call_invite` data message (below). Ignore it if `expiresAt` has passed.
+
+Call invites use a TTL equal to the remaining ring time (60 seconds max). A phone that is off longer than that never rings for an old call.
+
+## Option B: your backend sends the push (webhook)
+
+If the customer prefers to send pushes from their own server:
 
 1. Listen for `call.ringing` webhook from RTC signaling
 2. Look up the callee's device push token (stored in your DB)
 3. Send FCM/APNs data message with call metadata
+
+Do not enable both options for the same device unless the client deduplicates by `callId`.
 
 ## Webhook payload (`call.ringing`)
 
