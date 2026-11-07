@@ -7,7 +7,7 @@ Add **voice calls, video calls and in-app chat** to any web app. RTCExpress hand
 - Text chat with history, presence, screen sharing, recording
 - Auto-reconnect, roles and moderator controls, call quality metrics
 
-**Website:** https://rtc.devsquarelabs.com · **Docs:** https://rtc.devsquarelabs.com/docs · **Live demo:** https://api.devsquarelabs.com/demo/
+**Website:** https://rtc.devsquarelabs.com · **Docs:** https://rtc.devsquarelabs.com/docs · **Live demo:** https://api.devsquarelabs.com/demo/ · **For AI tools:** https://rtc.devsquarelabs.com/llms-full.txt
 
 ## Install
 

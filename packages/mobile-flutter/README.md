@@ -9,7 +9,7 @@ Flutter plugin for [RTCExpress](https://rtc.devsquarelabs.com): add **voice call
 - Android supported; iOS experimental (see below)
 - Events via `rtc.on(event, handler)`
 
-**Website:** https://rtc.devsquarelabs.com · **Docs:** https://rtc.devsquarelabs.com/docs · **Web SDK:** [`rtcexpress` on npm](https://www.npmjs.com/package/rtcexpress)
+**Website:** https://rtc.devsquarelabs.com · **Docs:** https://rtc.devsquarelabs.com/docs · **Web SDK:** [`rtcexpress` on npm](https://www.npmjs.com/package/rtcexpress) · **For AI tools:** https://rtc.devsquarelabs.com/llms-full.txt
 
 ## Platform support
 

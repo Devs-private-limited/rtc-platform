@@ -2,7 +2,7 @@
 
 Kotlin library for chat and WebRTC calls against the RTC Platform signaling server.
 
-**Website:** https://rtc.devsquarelabs.com · **Android guide:** https://rtc.devsquarelabs.com/sdk/android · **Tutorial:** https://rtc.devsquarelabs.com/tutorials/android-voice-calling
+**Website:** https://rtc.devsquarelabs.com · **Android guide:** https://rtc.devsquarelabs.com/sdk/android · **Tutorial:** https://rtc.devsquarelabs.com/tutorials/android-voice-calling · **For AI tools:** https://rtc.devsquarelabs.com/llms-full.txt
 
 ## Features
 
@@ -18,7 +18,7 @@ Kotlin library for chat and WebRTC calls against the RTC Platform signaling serv
 
 ```kotlin
 dependencies {
-    implementation("com.devsquarelabs:rtcexpress-android:0.1.0") // Maven Central
+    implementation("com.devsquarelabs:rtcexpress-android:0.1.1") // Maven Central
 }
 ```
 
@@ -75,6 +75,8 @@ val result = rtc.stopRecording()
 | `joinVideoRoom` / `leaveVideoRoom` | Group video (SFU) |
 | `startRecording` / `stopRecording` | Local mic recording |
 | `muteMicrophone` / `muteCamera` / `switchCamera` | Media controls |
+
+Group calls: `Listener.onMediaParticipant(roomId, userId, joined)` tells you who joined or left, and `Listener.onAudioLevels(levels)` gives loudness 0.0–1.0 per user about 3 times a second (use it to highlight who is speaking). For one video tile per person, set `CallVideoView.userId = "bob"`; without `userId` the view shows the newest remote camera.
 
 ## Media modes
 

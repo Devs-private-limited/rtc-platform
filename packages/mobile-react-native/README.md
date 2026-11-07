@@ -8,7 +8,7 @@ React Native SDK for [RTCExpress](https://rtc.devsquarelabs.com): add **voice ca
 - Native video renderer (`RTCVideoView`, Android)
 - Push device registration helper (`RTCPushClient`)
 
-**Website:** https://rtc.devsquarelabs.com · **Docs:** https://rtc.devsquarelabs.com/docs · Also on [npm for web](https://www.npmjs.com/package/rtcexpress) and [pub.dev for Flutter](https://pub.dev/packages/rtcexpress)
+**Website:** https://rtc.devsquarelabs.com · **Docs:** https://rtc.devsquarelabs.com/docs · Also on [npm for web](https://www.npmjs.com/package/rtcexpress) and [pub.dev for Flutter](https://pub.dev/packages/rtcexpress) · **For AI tools:** https://rtc.devsquarelabs.com/llms-full.txt
 
 ## Platform support
 
@@ -68,11 +68,18 @@ rtc.endCall();
 <RTCVideoView local={false} style={{ flex: 1 }} />
 <RTCVideoView local style={{ width: 96, height: 128 }} />
 
+// Group voice/video in the current room (Android; Pro plan or higher):
+rtc.joinVideoRoom();       // or joinVoiceRoom()
+rtc.on('mediaParticipant', (p) => console.log(p.userId, p.joined ? 'joined' : 'left'));
+rtc.on('audioLevels', (levels) => setSpeaking(levels)); // { alice: 0.8, bob: 0.1 }, ~3x a second
+<RTCVideoView userId="bob" style={{ flex: 1 }} />    // one tile per person
+rtc.leaveVideoRoom();
+
 // When the screen unmounts:
 rtc.destroy();
 ```
 
-Events: `connected`, `disconnected`, `roomJoined`, `message`, `callInvite`, `callState`, `remoteVideo`, `diagnostics`, `error`.
+Events: `connected`, `disconnected`, `roomJoined`, `message`, `callInvite`, `callState`, `remoteVideo`, `groupMedia`, `mediaParticipant` (`{ roomId, userId, joined }`), `audioLevels` (`{ [userId]: 0..1 }`, highlight who is speaking), `diagnostics`, `error`.
 
 ## Support
 
