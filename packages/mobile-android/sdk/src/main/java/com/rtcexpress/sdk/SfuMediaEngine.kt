@@ -29,7 +29,11 @@ class SfuMediaEngine(
     private val userId: String,
     private val authToken: String,
     private val sendSignaling: (String, JSONObject) -> Unit,
-    private val onRemoteVideo: (VideoTrack) -> Unit
+    private val onRemoteVideo: (VideoTrack) -> Unit,
+    /** A remote person's media arrived (true) or they left (false). */
+    private val onParticipant: (String, Boolean) -> Unit = { _, _ -> },
+    /** Every 300 ms: how loud each person is (0.0-1.0), including this user. */
+    private val onAudioLevels: (Map<String, Double>) -> Unit = {}
 ) {
     private val http = OkHttpClient()
     // Shared with P2P calls and CallVideoView: video frames can only be drawn by views
@@ -48,7 +52,61 @@ class SfuMediaEngine(
     private var micProducer: Producer? = null
     private var camProducer: Producer? = null
     private val consumers = mutableMapOf<String, Consumer>()
+    private val consumerUsers = mutableMapOf<String, String>() // producerId -> userId
+    private val lock = Any()
+    private var levelTimer: java.util.Timer? = null
+    private var micMuted = false
     private var usingFrontCamera = true
+    // Call audio: loudspeaker + voice-call mode (echo cancellation), same as 1:1 P2P calls.
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+    private var previousMode = android.media.AudioManager.MODE_NORMAL
+    private var previousSpeaker = false
+    private var audioFocus: android.media.AudioFocusRequest? = null
+    private var callAudioOn = false
+
+    private fun startCallAudio() {
+        if (callAudioOn) return
+        callAudioOn = true
+        runCatching {
+            previousMode = audioManager.mode
+            @Suppress("DEPRECATION")
+            previousSpeaker = audioManager.isSpeakerphoneOn
+            audioManager.mode = android.media.AudioManager.MODE_IN_COMMUNICATION
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                audioManager.availableCommunicationDevices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                    ?.let { audioManager.setCommunicationDevice(it) }
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.isSpeakerphoneOn = true
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                audioFocus = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(
+                        android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                    .setOnAudioFocusChangeListener { }
+                    .build()
+                audioManager.requestAudioFocus(audioFocus!!)
+            }
+        }
+    }
+
+    private fun stopCallAudio() {
+        if (!callAudioOn) return
+        callAudioOn = false
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= 26) audioFocus?.let { audioManager.abandonAudioFocusRequest(it) }
+            if (android.os.Build.VERSION.SDK_INT >= 31) audioManager.clearCommunicationDevice()
+            else {
+                @Suppress("DEPRECATION")
+                audioManager.isSpeakerphoneOn = previousSpeaker
+            }
+            audioManager.mode = previousMode
+        }
+    }
 
     init {
         MediasoupClient.initialize(context)
@@ -64,6 +122,7 @@ class SfuMediaEngine(
             JSONObject().put("peerId", userId)
         )
         val rtpCapabilities = joinJson.getJSONObject("rtpCapabilities").toString()
+        startCallAudio()
 
         val mediasoupDevice = Device()
         // Same factory (and EGL context) as CallVideoView, so remote SFU video can be drawn.
@@ -75,6 +134,64 @@ class SfuMediaEngine(
         createRecvTransport(base, roomId)
         if (options.audio || options.video) publishCameraMic(options)
         consumeExisting(base, roomId)
+        startLevelTimer()
+    }
+
+    /** Someone left the group call: stop their audio/video right away. */
+    fun removeUser(remoteUserId: String) {
+        val closed = synchronized(lock) {
+            val ids = consumerUsers.filterValues { it == remoteUserId }.keys.toList()
+            ids.forEach { id ->
+                runCatching { consumers.remove(id)?.close() }
+                consumerUsers.remove(id)
+            }
+            ids.isNotEmpty()
+        }
+        CallVideoTracks.updateUser(remoteUserId, null)
+        if (closed) onParticipant(remoteUserId, false)
+    }
+
+    private fun startLevelTimer() {
+        levelTimer?.cancel()
+        levelTimer = java.util.Timer("rtc-audio-levels", true).apply {
+            scheduleAtFixedRate(object : java.util.TimerTask() {
+                override fun run() {
+                    val levels = runCatching { readLevels() }.getOrNull() ?: return
+                    if (levels.isNotEmpty()) runCatching { onAudioLevels(levels) }
+                }
+            }, 500, 300)
+        }
+    }
+
+    private fun readLevels(): Map<String, Double> = synchronized(lock) {
+        val out = mutableMapOf<String, Double>()
+        for ((producerId, consumer) in consumers) {
+            if (consumer.kind != "audio") continue
+            val user = consumerUsers[producerId] ?: continue
+            val level = runCatching { audioLevelOf(consumer.getStats()) }.getOrDefault(0.0)
+            out[user] = maxOf(out[user] ?: 0.0, level)
+        }
+        micProducer?.let { mic ->
+            out[userId] = if (micMuted) 0.0 else runCatching { audioLevelOf(mic.getStats()) }.getOrDefault(0.0)
+        }
+        out
+    }
+
+    /** Highest "audioLevel" in a WebRTC stats report (inbound-rtp / media-source / track). */
+    private fun audioLevelOf(statsJson: String): Double {
+        var best = 0.0
+        fun visit(node: Any?) {
+            when (node) {
+                is JSONObject -> {
+                    if (node.has("audioLevel")) best = maxOf(best, node.optDouble("audioLevel", 0.0))
+                    node.keys().forEach { visit(node.opt(it)) }
+                }
+                is org.json.JSONArray -> for (i in 0 until node.length()) visit(node.opt(i))
+            }
+        }
+        val trimmed = statsJson.trim()
+        visit(if (trimmed.startsWith("[")) org.json.JSONArray(trimmed) else JSONObject(trimmed))
+        return best
     }
 
     fun handleRemoteProducer(payload: JSONObject) {
@@ -87,6 +204,7 @@ class SfuMediaEngine(
     }
 
     fun muteMicrophone(muted: Boolean) {
+        micMuted = muted
         if (muted) micProducer?.pause() else micProducer?.resume()
         audioTrack?.setEnabled(!muted)
     }
@@ -104,10 +222,18 @@ class SfuMediaEngine(
     fun getLocalVideoTrack(): VideoTrack? = videoTrack
 
     fun destroy() {
-        micProducer?.close()
-        camProducer?.close()
-        consumers.values.forEach { it.close() }
-        consumers.clear()
+        levelTimer?.cancel()
+        levelTimer = null
+        synchronized(lock) {
+            micProducer?.close()
+            micProducer = null
+            camProducer?.close()
+            camProducer = null
+            consumers.values.forEach { runCatching { it.close() } }
+            consumers.clear()
+            consumerUsers.clear()
+        }
+        CallVideoTracks.clearUsers()
         sendTransport?.close()
         recvTransport?.close()
         sendTransport = null
@@ -129,6 +255,7 @@ class SfuMediaEngine(
         audioTrack = null
         audioSource?.dispose()
         audioSource = null
+        stopCallAudio()
         // The factory is shared (WebRtcPeerFactory): never dispose it here.
         roomId = null
     }
@@ -264,19 +391,26 @@ class SfuMediaEngine(
         )
 
         val consumer = recv.consume(
-            { consumers.remove(producerId) },
+            { synchronized(lock) { consumers.remove(producerId); consumerUsers.remove(producerId) } },
             res.getString("consumerId"),
             producerId,
             res.getString("kind"),
             res.getJSONObject("rtpParameters").toString(),
             ""
         )
-        consumers[producerId] = consumer
+        val firstForUser = synchronized(lock) {
+            val first = fromUserId.isNotBlank() && !consumerUsers.containsValue(fromUserId)
+            consumers[producerId] = consumer
+            if (fromUserId.isNotBlank()) consumerUsers[producerId] = fromUserId
+            first
+        }
         val track = consumer.track
         if (track is VideoTrack) {
             CallVideoTracks.update(false, track) // newest remote camera shows in RTCVideoView
+            if (fromUserId.isNotBlank()) CallVideoTracks.updateUser(fromUserId, track) // RTCVideoView(userId=...)
             onRemoteVideo(track)
         }
+        if (firstForUser) onParticipant(fromUserId, true)
     }
 
     private fun startCamera() {

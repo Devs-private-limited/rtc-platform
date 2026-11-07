@@ -224,6 +224,22 @@ const wss = new WebSocketServer({ server: app.server, path: "/ws" });
 const sockets = new Map<string, WebSocket>();
 const projectTasks = new ProjectTaskQueue();
 
+// Heartbeat: a phone that loses its network (or is killed without closing the socket) never
+// sends a close frame. Ping every 10 s and drop sockets that did not answer the last ping, so
+// the other person's call ends within ~20 s instead of hanging for minutes.
+const alive = new WeakMap<WebSocket, boolean>();
+const heartbeatTimer = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (alive.get(ws) === false) {
+      ws.terminate();
+      continue;
+    }
+    alive.set(ws, false);
+    try { ws.ping(); } catch { /* socket already closing */ }
+  }
+}, 10_000);
+heartbeatTimer.unref();
+
 function send(ws: WebSocket, message: ServerMessage) {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(message));
@@ -296,6 +312,13 @@ async function forceLeaveRoom(
 async function closeUserCall(appId: string, userId: string, reason: string, roomId?: string) {
   const call = findUserCall(appId, userId);
   if (!call || (roomId && call.roomId !== roomId)) return;
+  // The callee's app went away while their phone was ringing (app closed, screen locked):
+  // keep ringing, the call push wakes the phone and the invite is sent again on reconnect.
+  if (reason === "disconnected" && call.phase === "ringing" && call.calleeUserId === userId) return;
+  // The caller's app went away while it was still ringing: stop the ringing and tell the callee they missed it.
+  if (call.phase === "ringing" && call.callerUserId === userId) {
+    void sendMissedCallPush(appId, call).catch(() => app.log.error("Missed-call push failed"));
+  }
   await endCallSession(appId, call.callId, reason);
   clearUserCalls(appId, userId);
   const peer = call.callerUserId === userId ? call.calleeUserId : call.callerUserId;
@@ -321,6 +344,8 @@ wss.on("connection", (ws, req) => {
   }
 
   const { userId } = claims;
+  alive.set(ws, true);
+  ws.on("pong", () => alive.set(ws, true));
   const socketKey = tenantKey(claims.appId, userId);
   const appRooms = scopedRooms(rooms, claims.appId);
   const appRoles = scopedRoles(roomRoles, claims.appId);
@@ -378,8 +403,11 @@ wss.on("connection", (ws, req) => {
       // membership, so a lost socket can't leave a session open indefinitely.
       await endMediaSessionsForUser(claims.appId, userId);
       await closeUserCall(claims.appId, userId, "disconnected");
-      await endActiveCallsForUser(claims.appId, userId);
-      clearUserCalls(claims.appId, userId);
+      const stillRinging = findUserCall(claims.appId, userId);
+      if (!(stillRinging?.phase === "ringing" && stillRinging.calleeUserId === userId)) {
+        await endActiveCallsForUser(claims.appId, userId);
+        clearUserCalls(claims.appId, userId);
+      }
       const leftRooms = await appRooms.leaveAll(userId);
       for (const roomId of leftRooms) {
         appRoles.remove(roomId, userId);
@@ -406,6 +434,7 @@ async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
   clearInterval(ringingTimer);
+  clearInterval(heartbeatTimer);
   await stopMessagePushWorker();
   console.log(`Shutting down (${signal})...`);
 

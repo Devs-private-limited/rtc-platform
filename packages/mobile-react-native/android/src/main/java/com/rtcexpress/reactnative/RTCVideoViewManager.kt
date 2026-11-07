@@ -10,4 +10,7 @@ class RTCVideoViewManager : SimpleViewManager<CallVideoView>() {
     override fun createViewInstance(context: ThemedReactContext) = CallVideoView(context)
     @ReactProp(name = "local", defaultBoolean = false)
     fun setLocal(view: CallVideoView, local: Boolean) { view.local = local }
+    /** Group video: show this person's camera. */
+    @ReactProp(name = "userId")
+    fun setUserId(view: CallVideoView, userId: String?) { view.userId = userId }
 }

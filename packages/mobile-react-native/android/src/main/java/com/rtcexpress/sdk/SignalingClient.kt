@@ -8,7 +8,10 @@ import okhttp3.WebSocketListener
 import org.json.JSONObject
 
 class SignalingClient(
-    private val http: OkHttpClient = OkHttpClient()
+    // Ping every 15 s: a dead connection (Wi-Fi lost) is noticed in seconds, so the call ends cleanly.
+    private val http: OkHttpClient = OkHttpClient.Builder()
+        .pingInterval(15, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
 ) {
     interface Listener {
         fun onConnected(userId: String)
@@ -25,6 +28,8 @@ class SignalingClient(
         fun onWebRtcAnswer(payload: JSONObject)
         fun onWebRtcIceCandidate(payload: JSONObject)
         fun onSfuProducer(payload: JSONObject)
+        /** Someone joined or left group voice/video in a room this user is in. */
+        fun onMediaParticipant(payload: JSONObject, joined: Boolean) {}
         fun onError(message: String, code: String? = null)
     }
 
@@ -117,6 +122,8 @@ class SignalingClient(
             "webrtc_answer" -> listener?.onWebRtcAnswer(payload)
             "ice_candidate" -> listener?.onWebRtcIceCandidate(payload)
             "sfu_producer" -> listener?.onSfuProducer(payload)
+            "media_participant_joined" -> listener?.onMediaParticipant(payload, true)
+            "media_participant_left" -> listener?.onMediaParticipant(payload, false)
             "error" -> listener?.onError(
                 payload.optString("message", "Unknown error"),
                 payload.optString("code").ifBlank { null }

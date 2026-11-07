@@ -13,6 +13,10 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         fun onCallInvite(invite: CallInvite) {}
         fun onCallState(update: CallStateUpdate) {}
         fun onRemoteVideo(track: VideoTrack) {}
+        /** Someone joined (true) or left (false) group voice/video in [roomId]. */
+        fun onMediaParticipant(roomId: String, userId: String, joined: Boolean) {}
+        /** About 3 times a second during SFU calls: loudness 0.0-1.0 per user (this user included). */
+        fun onAudioLevels(levels: Map<String, Double>) {}
         fun onVoiceRoomJoined(roomId: String) {}
         fun onVoiceRoomLeft(roomId: String) {}
         fun onVideoRoomJoined(roomId: String) {}
@@ -149,7 +153,9 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 userId = userId,
                 authToken = token,
                 sendSignaling = { type, payload -> signaling.send(type, payload) },
-                onRemoteVideo = { track -> listener?.onRemoteVideo(track) }
+                onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
+                onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
+                onAudioLevels = { levels -> listener?.onAudioLevels(levels) }
             )
         }
         try {
@@ -189,7 +195,9 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 userId = userId,
                 authToken = token,
                 sendSignaling = { type, payload -> signaling.send(type, payload) },
-                onRemoteVideo = { track -> listener?.onRemoteVideo(track) }
+                onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
+                onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
+                onAudioLevels = { levels -> listener?.onAudioLevels(levels) }
             )
         }
         try {
@@ -410,6 +418,14 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         sfu?.handleRemoteProducer(payload)
     }
 
+    override fun onMediaParticipant(payload: JSONObject, joined: Boolean) {
+        val room = payload.optString("roomId")
+        val who = payload.optString("userId")
+        if (room.isBlank() || who.isBlank() || who == userId) return
+        if (!joined) sfu?.removeUser(who)
+        listener?.onMediaParticipant(room, who, joined)
+    }
+
     override fun onError(message: String, code: String?) {
         // The server refused our call (busy, offline, not in the plan...): don't leave it ringing.
         if (code in listOf("call_busy", "user_offline", "plan_feature_denied", "invalid_call") && activeCall?.isCaller == true) {
@@ -455,7 +471,9 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 userId = userId,
                 authToken = token,
                 sendSignaling = { type, payload -> signaling.send(type, payload) },
-                onRemoteVideo = { track -> listener?.onRemoteVideo(track) }
+                onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
+                onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
+                onAudioLevels = { levels -> listener?.onAudioLevels(levels) }
             )
         }
         val sfuRoomId = "${call.roomId}-call-${call.callId}"

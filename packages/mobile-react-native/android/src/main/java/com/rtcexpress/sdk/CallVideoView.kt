@@ -12,6 +12,7 @@ object CallVideoTracks {
     private val main = Handler(Looper.getMainLooper())
     private var local: VideoTrack? = null
     private var remote: VideoTrack? = null
+    private val users = mutableMapOf<String, VideoTrack>() // group video: one camera per person
     private val views = mutableSetOf<CallVideoView>()
     fun update(isLocal: Boolean, track: VideoTrack?) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -19,11 +20,32 @@ object CallVideoTracks {
             return
         }
         if (isLocal) local = track else remote = track
-        views.filter { it.local == isLocal }.forEach { it.bind(track) }
+        views.filter { it.local == isLocal && it.userId.isNullOrBlank() }.forEach { it.bind(track) }
+    }
+    fun updateUser(userId: String, track: VideoTrack?) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            main.post { updateUser(userId, track) }
+            return
+        }
+        if (track == null) users.remove(userId) else users[userId] = track
+        views.filter { !it.local && it.userId == userId }.forEach { it.bind(track) }
+    }
+    fun clearUsers() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            main.post { clearUsers() }
+            return
+        }
+        users.clear()
+        views.filter { !it.userId.isNullOrBlank() }.forEach { it.bind(null) }
+    }
+    private fun trackFor(view: CallVideoView): VideoTrack? = when {
+        view.local -> local
+        !view.userId.isNullOrBlank() -> users[view.userId]
+        else -> remote
     }
     fun register(view: CallVideoView) {
         views.add(view)
-        view.bind(if (view.local) local else remote)
+        view.bind(trackFor(view))
     }
     fun unregister(view: CallVideoView) {
         views.remove(view)
@@ -37,6 +59,12 @@ class CallVideoView(context: Context) : SurfaceViewRenderer(context) {
             field = value
             setMirror(value)
             setZOrderMediaOverlay(value)
+            if (isAttachedToWindow) CallVideoTracks.register(this)
+        }
+    /** Group video: show this person's camera instead of the newest remote one. */
+    var userId: String? = null
+        set(value) {
+            field = value
             if (isAttachedToWindow) CallVideoTracks.register(this)
         }
     private var track: VideoTrack? = null

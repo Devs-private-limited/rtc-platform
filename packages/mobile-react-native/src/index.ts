@@ -22,6 +22,8 @@ export type MediaMode = "p2p" | "sfu" | "auto";
 export type RTCVideoViewProps = ViewProps & {
   /** true renders the local camera preview; false (default) the remote video. */
   local?: boolean;
+  /** Group video: show this person's camera (default: the newest remote camera). */
+  userId?: string;
 };
 
 /** Native video renderer for the active call. Android only for now. */
@@ -62,6 +64,10 @@ export type RTCEventName =
   | "callState"
   | "remoteVideo"
   | "groupMedia"
+  /** { roomId, userId, joined } when someone joins or leaves group voice/video. */
+  | "mediaParticipant"
+  /** { [userId]: 0..1 } about 3 times a second in SFU calls (you included): highlight who is speaking. */
+  | "audioLevels"
   | "diagnostics"
   | "error";
 

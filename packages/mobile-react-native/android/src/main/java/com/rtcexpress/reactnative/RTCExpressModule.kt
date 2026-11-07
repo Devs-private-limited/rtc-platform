@@ -232,6 +232,14 @@ class RTCExpressModule(private val reactContext: ReactApplicationContext) :
         emit("groupMedia", Arguments.createMap().apply { putString("roomId", roomId); putString("kind", "video"); putBoolean("joined", false) })
     }
 
+    override fun onMediaParticipant(roomId: String, userId: String, joined: Boolean) {
+        emit("mediaParticipant", Arguments.createMap().apply { putString("roomId", roomId); putString("userId", userId); putBoolean("joined", joined) })
+    }
+
+    override fun onAudioLevels(levels: Map<String, Double>) {
+        emit("audioLevels", Arguments.createMap().apply { levels.forEach { (user, level) -> putDouble(user, level) } })
+    }
+
     override fun onError(message: String) {
         emit("error", Arguments.createMap().apply { putString("message", message) })
     }
