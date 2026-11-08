@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import { BILLING_PLANS } from "../billing-plans.js";
+import { BILLING_PLANS, MINUTE_PACKS, isMinutePack } from "../billing-plans.js";
 import { getCustomerByAppId } from "../customers.js";
 import {
   DodoError,
   changeDodoPlan,
   createDodoCheckout,
+  createMinutePackCheckout,
   createDodoPortalLink,
   dodoConfig,
   ensureDodoCustomer,
@@ -60,6 +61,29 @@ export async function registerDodoBillingRoutes(app: FastifyInstance, secret: st
       const customerId = await ensureDodoCustomer(claims.appId, customer.email, customer.name || customer.company);
       const url = await createDodoCheckout({ appId: claims.appId, customerId, plan, period, returnUrl: billingReturnUrl() });
       return { url };
+    } catch (err) {
+      const failure = dodoFailure(err);
+      return reply.code(failure.status).send({ error: failure.error });
+    }
+  });
+
+  // Buy a minute pack once (paid plans): the minutes are added to the current paid month or year.
+  app.post<{ Body: { pack?: unknown } }>("/v1/portal/billing/minute-pack", async (req, reply) => {
+    const claims = await requirePortalUser(req, reply, secret); if (!claims) return;
+    if (!isDodoEnabled()) return reply.code(503).send({ error: "Online checkout is not available yet. Contact support to buy minutes." });
+    if (!rateLimit(`billing-pack:${claims.appId}`, 10, 60_000)) return reply.code(429).send({ error: "Too many requests. Try again shortly." });
+    const pack = req.body?.pack;
+    if (!isMinutePack(pack)) return reply.code(400).send({ error: "Choose a voice or video minute pack" });
+    const billing = await getAppBilling(claims.appId);
+    if (!billing) return reply.code(404).send({ error: "Project not found" });
+    if (!hasLiveSubscription(billing) || !billing.customerId || billing.plan === "free") {
+      return reply.code(409).send({ error: "Minute packs are for paid plans. Choose a plan first." });
+    }
+    if (pack === "video" && !BILLING_PLANS[billing.plan].features.video) {
+      return reply.code(409).send({ error: "Your plan doesn't include video calls. Upgrade to Pro to use video minutes." });
+    }
+    try {
+      return { url: await createMinutePackCheckout({ appId: claims.appId, customerId: billing.customerId, pack, returnUrl: billingReturnUrl() }), pack: MINUTE_PACKS[pack] };
     } catch (err) {
       const failure = dodoFailure(err);
       return reply.code(failure.status).send({ error: failure.error });

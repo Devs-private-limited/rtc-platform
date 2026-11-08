@@ -192,8 +192,10 @@ export interface BillingSummary {
   period: { from: string | null; to: string | null };
   usage: UsageBreakdown;
   limits: PlanLimits;
-  /** Extra minutes an admin added for this month (already included in limits). */
+  /** Extra voice minutes (minute packs + admin grants) for this period, already included in limits. */
   bonusMinutes: number;
+  /** Extra video minutes (video minute packs) for this period, already included in limits. */
+  bonusVideoMinutes: number;
   limitStatus: {
     voiceMinutes: LimitStatus;
     videoMinutes: LimitStatus;
@@ -215,9 +217,11 @@ export function computeBillingSummary(
   plan: BillingPlan,
   usage: UsageBreakdown,
   period: { from: string | null; to: string | null } = { from: null, to: null },
-  bonusMinutes = 0,
+  bonus: number | { voice: number; video: number } = 0,
   window?: UsageWindow
 ): BillingSummary {
+  const bonusMinutes = typeof bonus === "number" ? bonus : bonus.voice;
+  const bonusVideoMinutes = typeof bonus === "number" ? 0 : bonus.video;
   const def = BILLING_PLANS[plan];
   // Yearly plans: twelve months of allowance for the whole year, usable any time.
   const k = window?.yearly ? 12 : 1;
@@ -230,10 +234,13 @@ export function computeBillingSummary(
     transcriptionMinutes: def.limits.transcriptionMinutes * k,
     qualityReports: def.limits.qualityReports * k,
   };
-  // Extra minutes given by an admin for this period raise the voice and total call allowance.
-  const limits = bonusMinutes > 0
-    ? { ...base, voiceMinutes: base.voiceMinutes + bonusMinutes, callMinutes: base.callMinutes + bonusMinutes }
-    : base;
+  // Extra minutes (minute packs, admin grants) for this period raise the allowance.
+  const limits = {
+    ...base,
+    voiceMinutes: base.voiceMinutes + bonusMinutes,
+    videoMinutes: base.videoMinutes + bonusVideoMinutes,
+    callMinutes: base.callMinutes + bonusMinutes + bonusVideoMinutes,
+  };
 
   return {
     appId,
@@ -246,6 +253,7 @@ export function computeBillingSummary(
     usage,
     limits,
     bonusMinutes,
+    bonusVideoMinutes,
     limitStatus: {
       voiceMinutes: limitStatus(usage.voiceMinutes, limits.voiceMinutes),
       videoMinutes: limitStatus(usage.videoMinutes, limits.videoMinutes),
@@ -269,3 +277,14 @@ export function checkThresholdAlerts(summary: BillingSummary) {
   }
   return alerts;
 }
+
+/**
+ * Minute packs: bought once in the console (Dodo one-time product with exactly this name) on a paid
+ * plan. The minutes are added to the current paid month (or year) and end when the plan renews.
+ */
+export const MINUTE_PACKS = {
+  voice: { minutes: 20_000, priceUsd: 6, productName: "RTCExpress Voice Minutes Pack", label: "20,000 extra voice minutes" },
+  video: { minutes: 5_000, priceUsd: 8, productName: "RTCExpress Video Minutes Pack", label: "5,000 extra video minutes" },
+} as const;
+export type MinutePack = keyof typeof MINUTE_PACKS;
+export const isMinutePack = (v: unknown): v is MinutePack => v === "voice" || v === "video";

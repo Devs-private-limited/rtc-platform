@@ -124,17 +124,18 @@ export async function getCurrentBillingSummary(appId: string): Promise<BillingSu
   return computeBillingSummary(appId, plan, usage, { from: window.from, to: window.to }, bonus, window);
 }
 
-/** Extra minutes an admin gave since `from` (all of them for the trial). */
+/** Extra minutes (minute packs + admin grants) since `from` (all of them for the trial), voice and video. */
 export async function getBonusMinutesSince(appId: string, from: string | null) {
   const db = getPool();
-  if (!db) return 0;
+  if (!db) return { voice: 0, video: 0 };
+  const sum = `SELECT COALESCE(SUM(minutes) FILTER (WHERE kind <> 'video'),0)::int AS voice,
+                      COALESCE(SUM(minutes) FILTER (WHERE kind = 'video'),0)::int AS video
+               FROM app_bonus_minutes WHERE app_id = $1`;
   try {
-    const r = from
-      ? await db.query("SELECT COALESCE(SUM(minutes),0)::int AS total FROM app_bonus_minutes WHERE app_id = $1 AND created_at >= $2", [appId, from])
-      : await db.query("SELECT COALESCE(SUM(minutes),0)::int AS total FROM app_bonus_minutes WHERE app_id = $1", [appId]);
-    return Number(r.rows[0]?.total ?? 0);
+    const r = from ? await db.query(`${sum} AND created_at >= $2`, [appId, from]) : await db.query(sum, [appId]);
+    return { voice: Number(r.rows[0]?.voice ?? 0), video: Number(r.rows[0]?.video ?? 0) };
   } catch {
-    return 0;
+    return { voice: 0, video: 0 };
   }
 }
 

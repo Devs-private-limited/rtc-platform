@@ -57,6 +57,9 @@ test("dodo checkout and webhooks drive the project plan", async (t) => {
   await pg.exec(migration); await pg.exec(migration);
   const payments = await readFile(new URL("../migrations/020_billing_payments.sql", import.meta.url), "utf8");
   await pg.exec(payments); await pg.exec(payments);
+  for (const file of ["022_admin_team_and_bonus_minutes.sql", "024_usage_alert_log.sql", "025_minute_packs.sql", "025_minute_packs.sql"]) {
+    await pg.exec(await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  }
   await pg.query(`INSERT INTO customer_accounts(email, password_hash, name, app_id) VALUES ('a@example.test', 'x', 'Ann', 'app-a')`);
   t.mock.method(getPool()!, "query", async (sql: string, args?: unknown[]) => {
     const result = await pg.query(sql, args);
@@ -75,6 +78,7 @@ test("dodo checkout and webhooks drive the project plan", async (t) => {
       { product_id: "pdt_sm", name: "RTCExpress Starter (Monthly)" }, { product_id: "pdt_sy", name: "RTCExpress Starter (Yearly)" },
       { product_id: "pdt_pm", name: "RTCExpress Pro (Monthly)" }, { product_id: "pdt_py", name: "RTCExpress Pro (Yearly)" },
       { product_id: "pdt_other", name: "Something else" },
+      { product_id: "pdt_vpack", name: "RTCExpress Voice Minutes Pack" }, { product_id: "pdt_vidpack", name: "RTCExpress Video Minutes Pack" },
     ] });
     if (path === "/customers") return json({ customer_id: "cus_a" });
     if (path === "/checkouts") return json({ session_id: "cks_1", checkout_url: "https://test.checkout.dodopayments.com/cks_1" });
@@ -217,5 +221,30 @@ test("dodo checkout and webhooks drive the project plan", async (t) => {
     assert.equal(invoice.headers["content-type"], "application/pdf");
     assert.equal((await app.inject({ url: "/v1/portal/billing/payments/pay_10/invoice", headers: portal("app-b") })).statusCode, 404);
     assert.equal((await app.inject({ url: "/v1/portal/billing/payments/pay_11/invoice", headers: portal() })).statusCode, 404);
+  });
+
+  await t.test("minute packs: paid plans buy once, minutes are added once, a refund takes them back", async () => {
+    const buy = (pack: string, appId = "app-a") => app.inject({ url: "/v1/portal/billing/minute-pack", method: "POST", headers: portal(appId), payload: { pack } });
+    assert.equal((await buy("audio")).statusCode, 400);
+    assert.equal((await buy("voice", "app-b")).statusCode, 409, "free projects choose a plan first");
+    const res = await buy("voice");
+    assert.equal(res.statusCode, 200, res.body);
+    assert.match(res.json().url, /checkout/);
+    const checkout = calls.filter((c) => c.path === "/checkouts").at(-1)!;
+    assert.deepEqual((checkout.body as any).product_cart, [{ product_id: "pdt_vpack", quantity: 1 }]);
+    assert.deepEqual((checkout.body as any).metadata, { appId: "app-a", pack: "voice" });
+
+    const pay = { payment_id: "pay_pack1", status: "succeeded", total_amount: 800, currency: "USD", created_at: "2026-11-08T10:00:00Z",
+      customer: { customer_id: "cus_a" }, metadata: { appId: "app-a", pack: "video" }, product_cart: [{ product_id: "pdt_vidpack", quantity: 1 }] };
+    assert.equal((await deliver("payment.processing", { ...pay, status: "processing" })).json().outcome, "applied");
+    const rows = async () => (await pg.query<{ minutes: number; kind: string }>(`SELECT minutes, kind FROM app_bonus_minutes WHERE app_id = 'app-a'`)).rows;
+    assert.equal((await rows()).length, 0, "nothing added before the payment succeeds");
+    await deliver("payment.succeeded", pay);
+    await deliver("payment.succeeded", pay); // retried webhook
+    assert.deepEqual(await rows(), [{ minutes: 5000, kind: "video" }]);
+    const list = (await app.inject({ url: "/v1/portal/billing/payments", headers: portal() })).json().payments;
+    assert.equal(list.find((p: any) => p.paymentId === "pay_pack1").description, "RTCExpress 5,000 extra video minutes");
+    await deliver("refund.succeeded", { refund_id: "ref_pack1", payment_id: "pay_pack1", amount: null });
+    assert.deepEqual(await rows(), []);
   });
 });

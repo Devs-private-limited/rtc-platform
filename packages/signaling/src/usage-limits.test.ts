@@ -60,3 +60,12 @@ test("Pro video limit is separate from voice; cache and database errors", async 
   // Our own demo project is never limited.
   assert.equal((await checkMinutes(process.env.DEMO_APP_ID || "demo-app", "voice", async () => summary("free", usage(9_999_999), { ...trial, trialOver: true }))).allowed, true);
 });
+
+test("minute packs raise the voice or video allowance for the current period", () => {
+  const s = computeBillingSummary("app", "pro", usage(50_000, 10_000), { from: monthly.from, to: monthly.to }, { voice: 20_000, video: 5_000 }, monthly);
+  assert.equal(s.limits.voiceMinutes, 70_000);
+  assert.equal(s.limits.videoMinutes, 15_000);
+  assert.equal(decide(s, "voice").allowed, true);
+  assert.equal(decide(s, "video").allowed, true);
+  assert.equal(decide(summary("pro", usage(0, 10_000), monthly), "video").allowed, false);
+});

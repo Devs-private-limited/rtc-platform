@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { BillingPlan } from "../billing-plans.js";
-import { BILLING_PLANS, isBillingPlan } from "../billing-plans.js";
+import { BILLING_PLANS, MINUTE_PACKS, isBillingPlan } from "../billing-plans.js";
 import { issueToken } from "../auth.js";
 import { verifyAppCredentials } from "../apps.js";
 import { getBillingSummary, getCurrentBillingSummary } from "../billing.js";
@@ -72,6 +72,7 @@ export async function registerPortalRoutes(app: FastifyInstance, jwtSecret: stri
         emailVerified: customer ? Boolean(customer.emailVerified) : null,
         billing,
         plans: BILLING_PLANS,
+        minutePacks: MINUTE_PACKS,
         subscription: {
           checkoutEnabled: isDodoEnabled(),
           period: subscription?.billingPeriod ?? null,

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
-import type { BillingPlan } from "./billing-plans.js";
+import { MINUTE_PACKS, type BillingPlan, type MinutePack } from "./billing-plans.js";
 import { getPool } from "./db.js";
+import { clearMinuteCache } from "./usage-limits.js";
 
 export type PaidPlan = Exclude<BillingPlan, "free">;
 export type BillingPeriod = "monthly" | "yearly";
@@ -59,7 +60,7 @@ async function dodoRequest<T>(method: string, path: string, body?: unknown): Pro
 // Products are matched by name ("RTCExpress Starter (Monthly)"), so the same
 // code works in test and live mode without copying product IDs around.
 const PRODUCT_NAME = /^RTCExpress (Starter|Pro) \((Monthly|Yearly)\)$/i;
-let productCache: { at: number; ids: Map<string, string>; plans: Map<string, { plan: PaidPlan; period: BillingPeriod }> } | null = null;
+let productCache: { at: number; ids: Map<string, string>; plans: Map<string, { plan: PaidPlan; period: BillingPeriod }>; packs: Map<string, MinutePack> } | null = null;
 
 export function parseProductName(name: unknown): { plan: PaidPlan; period: BillingPeriod } | null {
   const match = typeof name === "string" ? PRODUCT_NAME.exec(name.trim()) : null;
@@ -72,13 +73,21 @@ async function loadProducts(force = false) {
   const result = await dodoRequest<{ items?: Array<{ product_id: string; name?: string }> }>("GET", "/products?page_size=100");
   const ids = new Map<string, string>();
   const plans = new Map<string, { plan: PaidPlan; period: BillingPeriod }>();
+  const packs = new Map<string, MinutePack>();
   for (const item of result.items ?? []) {
+    const name = String(item.name || "").trim().toLowerCase();
+    const pack = (Object.keys(MINUTE_PACKS) as MinutePack[]).find((k) => MINUTE_PACKS[k].productName.toLowerCase() === name);
+    if (pack) {
+      ids.set(`pack:${pack}`, item.product_id);
+      packs.set(item.product_id, pack);
+      continue;
+    }
     const parsed = parseProductName(item.name);
     if (!parsed) continue;
     ids.set(`${parsed.plan}:${parsed.period}`, item.product_id);
     plans.set(item.product_id, parsed);
   }
-  productCache = { at: Date.now(), ids, plans };
+  productCache = { at: Date.now(), ids, plans, packs };
   return productCache;
 }
 
@@ -90,6 +99,25 @@ async function productIdFor(plan: PaidPlan, period: BillingPeriod) {
   const id = (await loadProducts()).ids.get(`${plan}:${period}`) ?? (await loadProducts(true)).ids.get(`${plan}:${period}`);
   if (!id) throw new DodoError(503, `No Dodo product named "RTCExpress ${plan === "pro" ? "Pro" : "Starter"} (${period === "yearly" ? "Yearly" : "Monthly"})"`);
   return id;
+}
+
+async function packForProduct(productId: string) {
+  return (await loadProducts()).packs.get(productId) ?? (await loadProducts(true)).packs.get(productId) ?? null;
+}
+
+/** One-time checkout for a minute pack (paid plans only; checked by the route). */
+export async function createMinutePackCheckout(input: { appId: string; customerId: string; pack: MinutePack; returnUrl: string }) {
+  const def = MINUTE_PACKS[input.pack];
+  const productId = (await loadProducts()).ids.get(`pack:${input.pack}`) ?? (await loadProducts(true)).ids.get(`pack:${input.pack}`);
+  if (!productId) throw new DodoError(503, `No Dodo product named "${def.productName}"`);
+  const session = await dodoRequest<{ session_id: string; checkout_url?: string | null }>("POST", "/checkouts", {
+    product_cart: [{ product_id: productId, quantity: 1 }],
+    customer: { customer_id: input.customerId },
+    return_url: input.returnUrl,
+    metadata: { appId: input.appId, pack: input.pack },
+  });
+  if (!session.checkout_url) throw new DodoError(502, "Dodo did not return a checkout URL");
+  return session.checkout_url;
 }
 
 async function planForProduct(productId: string) {
@@ -337,10 +365,16 @@ async function recordPayment(data: DodoPaymentData): Promise<WebhookOutcome> {
     return "ignored";
   }
   const productId = data.product_cart?.[0]?.product_id;
-  const product = productId ? await planForProduct(productId).catch(() => null) : null;
-  const description = product
-    ? `RTCExpress ${product.plan === "pro" ? "Pro" : "Starter"} (${product.period === "yearly" ? "Yearly" : "Monthly"})`
-    : "RTCExpress subscription";
+  const metaPack = data.metadata?.pack;
+  const pack: MinutePack | null = metaPack === "voice" || metaPack === "video"
+    ? metaPack
+    : productId ? await packForProduct(productId).catch(() => null) : null;
+  const product = !pack && productId ? await planForProduct(productId).catch(() => null) : null;
+  const description = pack
+    ? `RTCExpress ${MINUTE_PACKS[pack].label}`
+    : product
+      ? `RTCExpress ${product.plan === "pro" ? "Pro" : "Starter"} (${product.period === "yearly" ? "Yearly" : "Monthly"})`
+      : "RTCExpress subscription";
   await getPool()!.query(
     `INSERT INTO billing_payments (payment_id, app_id, subscription_id, status, amount_minor, currency, description, paid_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -350,6 +384,17 @@ async function recordPayment(data: DodoPaymentData): Promise<WebhookOutcome> {
       Math.max(0, Math.round(Number(data.total_amount) || 0)), String(data.currency || "USD").slice(0, 8).toUpperCase(),
       description, data.created_at ? new Date(data.created_at).toISOString() : new Date().toISOString()]
   );
+  // A paid minute pack: add its minutes to the current plan period (once per payment).
+  if (pack && data.status === "succeeded") {
+    const def = MINUTE_PACKS[pack];
+    await getPool()!.query(
+      `INSERT INTO app_bonus_minutes (app_id, month, minutes, note, granted_by, kind, payment_id)
+       VALUES ($1, to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM'), $2, $3, 'minute pack', $4, $5)
+       ON CONFLICT (payment_id) WHERE payment_id IS NOT NULL DO NOTHING`,
+      [appId, def.minutes, `Bought: ${def.label}`, pack, data.payment_id]
+    );
+    clearMinuteCache(appId);
+  }
   return "applied";
 }
 
@@ -359,6 +404,9 @@ async function recordRefund(data: DodoRefundData): Promise<WebhookOutcome> {
   const amount = Math.max(0, Math.round(Number(data.amount) || 0));
   const fresh = await db.query(`INSERT INTO billing_refunds (refund_id, payment_id, amount_minor) VALUES ($1,$2,$3) ON CONFLICT (refund_id) DO NOTHING`, [data.refund_id, data.payment_id, amount]);
   if (!fresh.rowCount) return "duplicate";
+  // A refunded minute pack: take its minutes back.
+  const removed = await db.query(`DELETE FROM app_bonus_minutes WHERE payment_id = $1 RETURNING app_id`, [data.payment_id]);
+  if (removed.rowCount) clearMinuteCache(String(removed.rows[0].app_id));
   // amount is null for a full refund: count the whole payment.
   const result = await db.query(
     `UPDATE billing_payments SET refunded_minor = LEAST(amount_minor, refunded_minor + CASE WHEN $2::bigint > 0 THEN $2::bigint ELSE amount_minor END), updated_at = NOW()

@@ -104,10 +104,12 @@ export async function maybeSendUsageEmails(appId: string) {
     const summary = await getCurrentBillingSummary(appId);
     const w = summary.window;
     if (!w || w.trialOver) return;
-    const periodKey = w.kind === "trial" ? "trial" : (w.from || "").slice(0, 10);
+    const base = w.kind === "trial" ? "trial" : (w.from || "").slice(0, 10);
     for (const kind of ["voice", "video", "messages"] as const) {
       const status = statusFor(summary, kind);
       if (status.limit <= 0) continue;
+      // Keyed by the allowance too: after a minute pack, a new 80% / 100% email can follow.
+      const periodKey = `${base}:${status.limit}`;
       const level = status.used >= status.limit ? 100 : status.percent >= 80 ? 80 : 0;
       if (!level) continue;
       if (level === 100) clearMinuteCache(appId); // refuse right away
