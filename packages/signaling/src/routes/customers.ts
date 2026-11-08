@@ -3,7 +3,8 @@ import { getPool } from '../db.js';
 import { requireAdmin, adminIdentity, audit } from './admin.js';
 import { setAppPlan } from '../apps.js';
 import { sendExtraMinutesEmail, sendPlanChangedEmail } from '../notify-email.js';
-import { getBonusMinutes } from '../billing.js';
+import { getBonusMinutes, getCurrentBillingSummary } from '../billing.js';
+import { clearMinuteCache } from '../usage-limits.js';
 import { requirePortalUser } from '../portal-auth.js';
 import { rateLimit } from '../rate-limit.js';
 import { BILLING_PLANS } from '../billing-plans.js';
@@ -108,6 +109,7 @@ export async function registerCustomerRoutes(app:FastifyInstance,secret:string) 
     const acc=await findAccount(req.params.accountId);if(!acc)return reply.code(404).send({error:'Customer not found'});
     if(acc.plan===plan)return reply.code(400).send({error:'The customer is already on this plan.'});
     await setAppPlan(acc.app_id,plan as any);
+    clearMinuteCache(acc.app_id);
     const order=['free','starter','pro'],upgrade=order.indexOf(plan)>order.indexOf(acc.plan);
     const email=req.body?.notify===false?'skipped':await sendPlanChangedEmail(acc.email,BILLING_PLANS[plan as keyof typeof BILLING_PLANS].name,upgrade);
     await audit(adminIdentity(req)!.email,'plan.change',acc.id,{email:acc.email,from:acc.plan,to:plan,reason,customerEmail:email});
@@ -124,7 +126,8 @@ export async function registerCustomerRoutes(app:FastifyInstance,secret:string) 
     const r=await db.query(`INSERT INTO app_bonus_minutes(app_id,month,minutes,note,granted_by) VALUES ($1,to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM'),$2,$3,$4) RETURNING id::text,month`,[acc.app_id,minutes,note,who]);
     let email='skipped';
     if(req.body?.notify!==false){
-      const allowance=(BILLING_PLANS[acc.plan as keyof typeof BILLING_PLANS]?.limits.callMinutes ?? 0)+await getBonusMinutes(acc.app_id);
+      clearMinuteCache(acc.app_id);
+      const allowance=(await getCurrentBillingSummary(acc.app_id)).limits.voiceMinutes;
       email=await sendExtraMinutesEmail(acc.email,minutes,r.rows[0].month,allowance);
     }
     await audit(who,'minutes.add',acc.id,{email:acc.email,minutes,month:r.rows[0].month,note,customerEmail:email});

@@ -59,9 +59,11 @@ export interface PlanDefinition {
 }
 
 /**
- * Flat monthly plans. Voice/video minutes are monthly limits: the owner is emailed at 80% and 100%
- * (usage-limits.ts) and new calls are refused once they are used up. Nothing is
- * ever charged per minute.
+ * Free is a ONE-TIME trial (its limits are for the life of the project, and it ends for good once
+ * the project has ever paid). Paid plans: the limits below are per paid month, counted from the
+ * customer's own payment date; yearly plans get 12x for the whole year, usable any time.
+ * When a limit is used up, new calls / messages are refused (usage-limits.ts) and the owner is
+ * emailed at 80% and 100%. Nothing is ever charged per minute.
  */
 export const BILLING_PLANS: Record<BillingPlan, PlanDefinition> = {
   free: {
@@ -166,8 +168,23 @@ export interface LimitStatus {
   exceeded: boolean;
 }
 
+/** Which usage counts right now. */
+export interface UsageWindow {
+  /** trial: Free plan, all usage ever. subscription: since the last payment. month: calendar month (plan set by an admin). */
+  kind: "trial" | "subscription" | "month";
+  from: string | null;
+  to: string;
+  /** When the allowance starts again (renewal date / 1st of next month); null for the trial. */
+  resetsAt: string | null;
+  yearly: boolean;
+  /** Free plan after the project has paid before: the trial is over, nothing is included. */
+  trialOver: boolean;
+}
+
 export interface BillingSummary {
   appId: string;
+  /** Present for the current period (absent for "all time" reports). */
+  window?: UsageWindow;
   plan: BillingPlan;
   planName: string;
   planDescription: string;
@@ -198,16 +215,29 @@ export function computeBillingSummary(
   plan: BillingPlan,
   usage: UsageBreakdown,
   period: { from: string | null; to: string | null } = { from: null, to: null },
-  bonusMinutes = 0
+  bonusMinutes = 0,
+  window?: UsageWindow
 ): BillingSummary {
   const def = BILLING_PLANS[plan];
-  // Extra minutes given by an admin for this month raise the voice and total call allowance.
+  // Yearly plans: twelve months of allowance for the whole year, usable any time.
+  const k = window?.yearly ? 12 : 1;
+  const base: PlanLimits = {
+    voiceMinutes: def.limits.voiceMinutes * k,
+    videoMinutes: def.limits.videoMinutes * k,
+    callMinutes: def.limits.callMinutes * k,
+    messages: def.limits.messages * k,
+    recordings: def.limits.recordings * k,
+    transcriptionMinutes: def.limits.transcriptionMinutes * k,
+    qualityReports: def.limits.qualityReports * k,
+  };
+  // Extra minutes given by an admin for this period raise the voice and total call allowance.
   const limits = bonusMinutes > 0
-    ? { ...def.limits, voiceMinutes: def.limits.voiceMinutes + bonusMinutes, callMinutes: def.limits.callMinutes + bonusMinutes }
-    : def.limits;
+    ? { ...base, voiceMinutes: base.voiceMinutes + bonusMinutes, callMinutes: base.callMinutes + bonusMinutes }
+    : base;
 
   return {
     appId,
+    ...(window ? { window } : {}),
     plan,
     planName: def.name,
     planDescription: def.description,

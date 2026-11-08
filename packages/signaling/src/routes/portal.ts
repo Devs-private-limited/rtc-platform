@@ -3,7 +3,7 @@ import type { BillingPlan } from "../billing-plans.js";
 import { BILLING_PLANS, isBillingPlan } from "../billing-plans.js";
 import { issueToken } from "../auth.js";
 import { verifyAppCredentials } from "../apps.js";
-import { getBillingSummary } from "../billing.js";
+import { getBillingSummary, getCurrentBillingSummary } from "../billing.js";
 import { getCustomerByAppId } from "../customers.js";
 import { getPool } from "../db.js";
 import { getAppBilling, isDodoEnabled } from "../dodo.js";
@@ -60,7 +60,7 @@ export async function registerPortalRoutes(app: FastifyInstance, jwtSecret: stri
 
     try {
       const [billing, name, customer, subscription] = await Promise.all([
-        getBillingSummary(claims.appId, req.query.period === "all" ? {} : currentMonth()),
+        req.query.period === "all" ? getBillingSummary(claims.appId, {}) : getCurrentBillingSummary(claims.appId),
         getAppName(claims.appId),
         getCustomerByAppId(claims.appId),
         getAppBilling(claims.appId),

@@ -15,7 +15,7 @@ test('customer notices and the new sign-up alert go to the right people with cle
   assert.equal(await sendExtraMinutesEmail('c@example.test', 1000, '2026-11', 3000), 'sent');
   assert.deepEqual(sent[0].to, ['c@example.test']);
   assert.match(sent[0].subject, /1,000 complimentary minutes/);
-  assert.match(sent[0].text, /November 2026/); assert.match(sent[0].text, /3,000 minutes/);
+  assert.match(sent[0].text, /current plan period only/); assert.match(sent[0].text, /3,000 minutes/);
   assert.match(sent[0].html, /https:\/\/rtc\.example\.test\/#\/portal/);
 
   await sendPlanChangedEmail('c@example.test', 'Pro', true);

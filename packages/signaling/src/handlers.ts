@@ -26,7 +26,7 @@ import { endCallSession, startCallSession } from "./metering.js";
 import { saveRecording } from "./recordings.js";
 import { saveQualityReport } from "./quality.js";
 import { maybeDispatchBillingAlert } from "./billing.js";
-import { checkMinutes, maybeSendUsageEmails, type MinuteKind } from "./usage-limits.js";
+import { checkMinutes, maybeSendUsageEmails, type LimitKind } from "./usage-limits.js";
 import { checkAppFeature } from "./plan-features.js";
 import type { PlanFeature } from "./billing-plans.js";
 import {
@@ -92,8 +92,8 @@ async function requireFeature(
   return false;
 }
 
-/** Refuse a new call / group join when this month's minutes are used up. */
-async function requireMinutes(ctx: HandlerContext, kind: MinuteKind): Promise<boolean> {
+/** Refuse a new call / group join / message when the allowance (trial, paid month or year) is used up. */
+async function requireMinutes(ctx: HandlerContext, kind: LimitKind): Promise<boolean> {
   const check = await checkMinutes(ctx.claims.appId, kind);
   if (check.allowed) return true;
   ctx.send(ctx.ws, {
@@ -183,6 +183,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
         clientMsgId?: string;
       };
       if (!(await requireFeature(ctx, "chat"))) return;
+      if (!(await requireMinutes(ctx, "messages"))) return;
       if (typeof text !== "string" || !text.length) {
         ctx.send(ws, { type: "error", payload: { message: "text is required" } });
         return;
@@ -223,6 +224,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
       await maybeDispatchBillingAlert(ctx.claims.appId, (type, payload) =>
         ctx.dispatch(type, payload)
       );
+      void maybeSendUsageEmails(ctx.claims.appId);
       break;
     }
 
