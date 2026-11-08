@@ -68,7 +68,8 @@ class RTCExpressModule(private val reactContext: ReactApplicationContext) :
                     appId = options.getString("appId") ?: "",
                     userId = options.getString("userId") ?: "",
                     token = options.getString("token") ?: "",
-                    mediaMode = options.getString("mediaMode") ?: "auto"
+                    mediaMode = options.getString("mediaMode") ?: "auto",
+                    ongoingCallNotification = !options.hasKey("ongoingCallNotification") || options.getBoolean("ongoingCallNotification")
                 )
             )
             rtc = rtcExpress

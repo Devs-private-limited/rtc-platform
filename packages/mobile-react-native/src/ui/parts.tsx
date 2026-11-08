@@ -76,7 +76,18 @@ export function CallButton({
   );
 }
 
+/** Top-left arrow that hides the call screen (the call continues; the ongoing-call bar brings it back). */
+export function MinimizeButton({ onPress, color }: { onPress(): void; color: string }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel="Minimize call" hitSlop={12} onPress={onPress} style={styles.minimize}>
+      <Text style={[styles.minimizeText, { color }]}>⌄</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  minimize: { position: "absolute", left: 12, top: 36, zIndex: 2, width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.25)" },
+  minimizeText: { fontSize: 28, lineHeight: 30, marginTop: -8 },
   avatar: { alignItems: "center", justifyContent: "center" },
   avatarText: { fontWeight: "700" },
   btnWrap: { alignItems: "center", minWidth: 72 },

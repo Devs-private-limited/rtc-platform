@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { BackHandler, Platform, ScrollView, StatusBar, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { RTCVideoView } from "../video";
-import { CallAvatar, CallButton, useNow } from "./parts";
+import { CallAvatar, CallButton, MinimizeButton, useNow } from "./parts";
 import { defaultCallLabels, defaultCallTheme, formatDuration, type RTCCallLabels, type RTCCallTheme } from "./theme";
 import type { RTCGroupCallController } from "./useRTCGroupCall";
 
@@ -29,12 +29,16 @@ export function GroupCallScreen({ controller, userId, title, displayName, theme:
   const now = useNow(g?.phase === "connected");
 
   useEffect(() => {
-    if (!g) return;
-    const sub = BackHandler.addEventListener("hardwareBackPress", () => true);
+    if (!g || controller.minimized) return;
+    // Android back button: keep the call, show the app with the ongoing-call bar (incoming calls must be answered first).
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      controller.minimize();
+      return true;
+    });
     return () => sub.remove();
-  }, [!!g]);
+  }, [!!g, controller.minimized, controller.minimize]);
 
-  if (!g) return null;
+  if (!g || controller.minimized) return null;
 
   const video = g.kind === "video" && Platform.OS === "android";
   const people = [userId, ...g.participants];
@@ -48,6 +52,7 @@ export function GroupCallScreen({ controller, userId, title, displayName, theme:
   return (
     <View style={[StyleSheet.absoluteFill, styles.root, { backgroundColor: theme.background }, style]}>
       <StatusBar barStyle="light-content" />
+      <MinimizeButton onPress={controller.minimize} color={theme.text} />
       <View style={styles.top}>
         <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
           {title || (g.kind === "video" ? t.videoCall : t.voiceCall)}

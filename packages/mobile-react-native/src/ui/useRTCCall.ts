@@ -32,6 +32,12 @@ export interface RTCCallController {
   cameraOff: boolean;
   /** The other person is talking right now (SFU calls on paid plans; always false in P2P calls). */
   peerSpeaking: boolean;
+  /** The call screen is hidden and the app is usable; show <OngoingCallBar> to get back. */
+  minimized: boolean;
+  /** Hide the call screen but keep the call (Android back button does this too). */
+  minimize(): void;
+  /** Show the call screen again. */
+  restore(): void;
   /** Call someone in the room you joined. Asks for microphone (and camera) permission first. Resolves false if it could not start. */
   startCall(peerUserId: string, options?: { video?: boolean }): Promise<boolean>;
   /** Answer the incoming call. Asks for permissions first. */
@@ -75,6 +81,7 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [peerSpeaking, setPeerSpeaking] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const callRef = useRef<RTCCall | null>(null);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLoud = useRef(0);
@@ -82,6 +89,9 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
   onEndedRef.current = options.onCallEnded;
 
   const update = useCallback((next: RTCCall | null) => {
+    // A new call always opens full screen. (A call that ends while minimized stays in the bar.)
+    const prev = callRef.current;
+    if (!next || !prev || prev.phase === "ended") setMinimized(false);
     callRef.current = next;
     setCall(next);
   }, []);
@@ -257,5 +267,12 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
     if (callRef.current?.phase === "ended") update(null);
   }, [update]);
 
-  return { call, muted, cameraOff, peerSpeaking, startCall, accept, decline, hangUp, toggleMute, toggleCamera, switchCamera, dismiss };
+  const minimize = useCallback(() => {
+    const c = callRef.current;
+    // An incoming call must be answered or declined first.
+    if (c && c.phase !== "ended" && !(c.direction === "incoming" && c.phase === "ringing")) setMinimized(true);
+  }, []);
+  const restore = useCallback(() => setMinimized(false), []);
+
+  return { call, muted, cameraOff, peerSpeaking, minimized, minimize, restore, startCall, accept, decline, hangUp, toggleMute, toggleCamera, switchCamera, dismiss };
 }

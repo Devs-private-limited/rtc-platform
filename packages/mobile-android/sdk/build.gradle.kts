@@ -34,7 +34,7 @@ dependencies {
 // Publishes com.devsquarelabs:rtcexpress-android to Maven Central (Central Portal).
 // Credentials and the signing key come from ~/.gradle/gradle.properties, never from this repo.
 mavenPublishing {
-    coordinates("com.devsquarelabs", "rtcexpress-android", "0.1.1")
+    coordinates("com.devsquarelabs", "rtcexpress-android", "0.1.2")
     publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
     // Local test builds skip signing; Maven Central uploads need the key configured.
     if (providers.gradleProperty("signingInMemoryKey").isPresent) signAllPublications()

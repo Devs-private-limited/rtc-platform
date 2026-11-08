@@ -50,6 +50,8 @@ export interface RTCCallLabels {
   missed: string;
   cancelled: string;
   failed: string;
+  ongoingCall: string;
+  tapToReturn: string;
 }
 
 export const defaultCallLabels: RTCCallLabels = {
@@ -77,6 +79,8 @@ export const defaultCallLabels: RTCCallLabels = {
   missed: "Missed call",
   cancelled: "Call cancelled",
   failed: "Call failed",
+  ongoingCall: "Ongoing call",
+  tapToReturn: "Tap to return",
 };
 
 /** Audio level (0..1) above which someone counts as speaking. */

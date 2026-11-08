@@ -90,6 +90,12 @@ SizedBox(width: 96, height: 128, child: RTCVideoView(local: true)); // self view
 
 `connected`, `disconnected`, `roomJoined`, `message`, `callInvite`, `callState`, `remoteVideo`, `diagnostics`, `error`
 
+## Calls in the background (Android)
+
+Calls keep working when the user goes to another app or turns the screen off. During a call the SDK shows an **"Ongoing call" notification** with a timer (tap it to go back to the app, or press **Hang up**), the same way WhatsApp does. Android requires this notification for an app to keep using the microphone/camera in the background. It's on by default; turn it off with `ongoingCallNotification: false` in init if your app has its own.
+
+Publishing on Google Play (target Android 14+): the SDK declares foreground services of type `microphone` and `camera`, so fill in the "Foreground service permissions" form in Play Console (reason: "ongoing voice/video call").
+
 ## Example
 
 See [`example/`](example/lib/main.dart). It reads its App ID and a test token (from the console's Token tools) via `--dart-define`.

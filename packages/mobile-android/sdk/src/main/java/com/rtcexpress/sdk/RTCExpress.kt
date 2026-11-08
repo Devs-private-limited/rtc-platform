@@ -55,6 +55,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     private var inVideoRoom = false
 
     private var activeCall: ActiveCall? = null
+    private var ongoingNotification = true
+    private var ongoingSince = 0L
     private var signalingReady = false
     private var pendingJoinRoomId: String? = null
 
@@ -82,6 +84,9 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         runCatching { configClient.fetchIceServers(serverUrl, token) }
             .onSuccess { if (it.isNotEmpty()) iceServers = it }
         mediaModePref = options.mediaMode
+        ongoingNotification = options.ongoingCallNotification
+        OngoingCallService.onHangUp = { hangUpEverything() }
+        OngoingCallService.onError = { message -> listener?.onDiagnostics(message) }
         signalingReady = false
         signaling.listener = this
         signaling.connect(serverUrl, options.token)
@@ -166,6 +171,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
             throw IllegalStateException("Could not join group voice: ${e.message}")
         }
         inVoiceRoom = true
+        startOngoing("Group voice call", false)
         signaling.send("join_media", JSONObject().put("roomId", room).put("kind", "voice"))
         listener?.onVoiceRoomJoined(room)
     }
@@ -178,6 +184,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
             sfu = null
         }
         inVoiceRoom = false
+        stopOngoingIfIdle()
         if (room != null && !inVideoRoom) {
             signaling.send("leave_media", JSONObject().put("roomId", room).put("kind", "voice"))
             listener?.onVoiceRoomLeft(room)
@@ -209,6 +216,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         }
         inVoiceRoom = true
         inVideoRoom = true
+        startOngoing("Group video call", true)
         signaling.send("join_media", JSONObject().put("roomId", room).put("kind", "video"))
         listener?.onVideoRoomJoined(room)
     }
@@ -220,6 +228,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         sfu = null
         inVideoRoom = false
         inVoiceRoom = false
+        stopOngoingIfIdle()
         if (room != null) {
             signaling.send("leave_media", JSONObject().put("roomId", room).put("kind", "video"))
             listener?.onVideoRoomLeft(room)
@@ -232,6 +241,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         val callId = JsonUtil.newCallId()
         val callType = if (video) "video" else "voice"
         activeCall = ActiveCall(callId, peerUserId, room, true, callType)
+        startOngoing(if (video) "Video call" else "Voice call", video, "Calling $peerUserId")
         if (resolvedMediaMode() == "sfu") {
             signaling.send(
                 "call_invite",
@@ -259,6 +269,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     fun acceptCall() {
         val call = activeCall ?: throw IllegalStateException("No incoming call")
         signaling.send("call_accept", callPayload(call, call.peerUserId))
+        startOngoing(if (call.callType == "video") "Video call" else "Voice call", call.callType == "video", "In call with ${call.peerUserId}")
         if (resolvedMediaMode() == "sfu") {
             if (!startSfuCallOrEnd(call)) return
         } else {
@@ -312,6 +323,9 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         endCall()
         leaveVoiceRoom()
         leaveVideoRoom()
+        stopOngoingIfIdle()
+        OngoingCallService.onHangUp = null
+        OngoingCallService.onError = null
         signaling.listener = null
         signaling.close()
         p2p?.destroy()
@@ -542,5 +556,29 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         p2p?.destroy()
         p2p = null
         activeCall = null
+        stopOngoingIfIdle()
+    }
+
+    /** Foreground service + "Ongoing call" notification while any call or group call is active. */
+    private fun startOngoing(title: String, video: Boolean, text: String = "Tap to return to the call") {
+        if (!ongoingNotification) return
+        if (ongoingSince == 0L) ongoingSince = System.currentTimeMillis()
+        if (!OngoingCallService.start(context, title, text, video, ongoingSince)) {
+            listener?.onDiagnostics("Ongoing call notification not shown (microphone permission missing or app in background)")
+        }
+    }
+
+    private fun stopOngoingIfIdle() {
+        if (activeCall != null || inVoiceRoom || inVideoRoom || ongoingSince == 0L) return
+        ongoingSince = 0L
+        OngoingCallService.stop(context)
+    }
+
+    /** "Hang up" in the notification, or the app swiped away. */
+    private fun hangUpEverything() {
+        endCall()
+        leaveVideoRoom()
+        leaveVoiceRoom()
+        stopOngoingIfIdle()
     }
 }

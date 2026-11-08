@@ -27,6 +27,11 @@ export interface RTCInitOptions {
   userId: string;
   token: string;
   mediaMode?: MediaMode;
+  /**
+   * Android: show an "Ongoing call" notification (tap = back to the app, Hang up button) so calls keep
+   * working while the user is in another app or the screen is off. Default true.
+   */
+  ongoingCallNotification?: boolean;
 }
 
 export interface TokenRequest {
@@ -144,6 +149,7 @@ export { useRTCCall, type RTCCall, type RTCCallController, type CallPhase, type 
 export { useRTCGroupCall, type RTCGroupCall, type RTCGroupCallController } from "./ui/useRTCGroupCall";
 export { CallScreen, type CallScreenProps } from "./ui/CallScreen";
 export { GroupCallScreen, type GroupCallScreenProps } from "./ui/GroupCallScreen";
-export { CallAvatar, CallButton } from "./ui/parts";
+export { OngoingCallBar, type OngoingCallBarProps } from "./ui/OngoingCallBar";
+export { CallAvatar, CallButton, MinimizeButton } from "./ui/parts";
 export { requestCallPermissions } from "./ui/permissions";
 export { defaultCallTheme, defaultCallLabels, type RTCCallTheme, type RTCCallLabels } from "./ui/theme";

@@ -113,7 +113,15 @@ What you get:
 - **In call:** timer, Mute, Camera on/off and Flip (video), End. Video calls show the other person full screen and you in a small corner window. "speaking" shows when the other person talks (paid plans).
 - **After the call:** "Call ended", "Call declined", "Missed call" or "Call failed" with the reason, for 1.5 seconds.
 - Microphone/camera permission is asked for you before calling or answering (Android).
-- The Android back button doesn't leave a call by accident.
+- **Minimize:** the Android back button (or the ⌄ arrow) hides the call screen while the call continues, so people can use the rest of your app. Add the ongoing-call bar to get back:
+
+```tsx
+<View style={{ flex: 1 }}>
+  <OngoingCallBar call={call} group={group} />   {/* green "Bob · 1:23 · Tap to return" bar */}
+  <YourNavigation />
+  <CallScreen controller={call} />
+</View>
+```
 
 **Group calls** (Pro plan or higher) in the room you joined:
 
@@ -145,6 +153,12 @@ One tile per person (camera or initials), a green frame around whoever is speaki
 Want your own design instead? Use only the hook: `call.call` has `peerUserId`, `video`, `direction`, `phase` (`ringing` / `connecting` / `connected` / `ended`), `connectedAt`, and the controller has `accept`, `decline`, `hangUp`, `toggleMute`, `toggleCamera` and `switchCamera`. `CallAvatar` and `CallButton` are exported too.
 
 Note: the screens show calls while your app is open. To ring a phone when the app is closed, also set up push (see "Incoming calls when the app is closed" in the docs).
+
+## Calls in the background (Android)
+
+Calls keep working when the user goes to another app or turns the screen off. During a call the SDK shows an **"Ongoing call" notification** with a timer (tap it to go back to the app, or press **Hang up**), the same way WhatsApp does. Android requires this notification for an app to keep using the microphone/camera in the background. It's on by default; turn it off with `ongoingCallNotification: false` in `rtc.init()` if your app has its own.
+
+Publishing on Google Play (target Android 14+): the SDK declares foreground services of type `microphone` and `camera`, so fill in the "Foreground service permissions" form in Play Console (reason: "ongoing voice/video call").
 
 ## Support
 

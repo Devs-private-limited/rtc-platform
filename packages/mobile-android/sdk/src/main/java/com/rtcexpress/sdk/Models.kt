@@ -8,7 +8,9 @@ data class RTCInitOptions(
     val appId: String,
     val userId: String,
     val token: String,
-    val mediaMode: String = "p2p"
+    val mediaMode: String = "p2p",
+    /** Show an "Ongoing call" notification during calls so the call keeps working in other apps / with the screen off. */
+    val ongoingCallNotification: Boolean = true
 )
 
 data class TokenRequest(

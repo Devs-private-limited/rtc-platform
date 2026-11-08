@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { BackHandler, Platform, StatusBar, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { RTCVideoView } from "../video";
-import { CallAvatar, CallButton, useNow } from "./parts";
+import { CallAvatar, CallButton, MinimizeButton, useNow } from "./parts";
 import { defaultCallLabels, defaultCallTheme, formatDuration, type RTCCallLabels, type RTCCallTheme } from "./theme";
 import type { RTCCall, RTCCallController } from "./useRTCCall";
 
@@ -29,12 +29,16 @@ export function CallScreen({ controller, displayName, theme: themeIn, labels: la
 
   // Android back button must not navigate the app behind an active call.
   useEffect(() => {
-    if (!call) return;
-    const sub = BackHandler.addEventListener("hardwareBackPress", () => true);
+    if (!call || controller.minimized) return;
+    // Android back button: keep the call, show the app with the ongoing-call bar (incoming calls must be answered first).
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      controller.minimize();
+      return true;
+    });
     return () => sub.remove();
-  }, [!!call]);
+  }, [!!call, controller.minimized, controller.minimize]);
 
-  if (!call) return null;
+  if (!call || controller.minimized) return null;
 
   const name = displayName ? displayName(call.peerUserId) : call.peerUserId;
   const ringingHere = call.direction === "incoming" && call.phase === "ringing";
@@ -56,6 +60,7 @@ export function CallScreen({ controller, displayName, theme: themeIn, labels: la
         </View>
       )}
 
+      {!ringingHere && !ended && <MinimizeButton onPress={controller.minimize} color={theme.text} />}
       <View style={[styles.top, showVideo && styles.topOverVideo]}>
         {!showVideo && <CallAvatar name={name} size={112} speaking={peerSpeaking || ringingHere} theme={theme} />}
         <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>

@@ -21,6 +21,10 @@ export interface RTCGroupCallController {
   cameraOff: boolean;
   /** Last error, e.g. "Group video calls are not included in your current plan". Cleared on the next join. */
   error: string | null;
+  /** The group call screen is hidden; show <OngoingCallBar> to get back. */
+  minimized: boolean;
+  minimize(): void;
+  restore(): void;
   /** Join group voice or video in the room you joined with rtc.joinRoom(). */
   join(kind: "voice" | "video"): Promise<boolean>;
   leave(): void;
@@ -44,6 +48,7 @@ export function useRTCGroupCall(
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [minimized, setMinimized] = useState(false);
   const ref = useRef<RTCGroupCall | null>(null);
   const lastLoud = useRef<Record<string, number>>({});
 
@@ -55,6 +60,7 @@ export function useRTCGroupCall(
 
   const reset = useCallback(() => {
     update(() => null);
+    setMinimized(false);
     setSpeaking([]);
     setMuted(false);
     setCameraOff(false);
@@ -149,5 +155,10 @@ export function useRTCGroupCall(
 
   const switchCamera = useCallback(() => client?.switchCamera(), [client]);
 
-  return { groupCall, speaking, muted, cameraOff, error, join, leave, toggleMute, toggleCamera, switchCamera };
+  const minimize = useCallback(() => {
+    if (ref.current) setMinimized(true);
+  }, []);
+  const restore = useCallback(() => setMinimized(false), []);
+
+  return { groupCall, speaking, muted, cameraOff, error, minimized, minimize, restore, join, leave, toggleMute, toggleCamera, switchCamera };
 }

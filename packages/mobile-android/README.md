@@ -86,6 +86,13 @@ Group calls: `Listener.onMediaParticipant(roomId, userId, joined)` tells you who
 | `sfu` | Always use mediasoup SFU |
 | `auto` | SFU when server provides `sfuUrl` |
 
+## Calls in the background
+
+Calls keep working when the user goes to another app or turns the screen off. During a call the SDK shows an **"Ongoing call" notification** with a timer (tap it to go back to the app, or press **Hang up**), the same way WhatsApp does. Android requires this notification for an app to keep using the microphone/camera in the background. It's on by default; turn it off with `RTCInitOptions(..., ongoingCallNotification = false)` if your app has its own.
+
+Publishing on Google Play (target Android 14+): the SDK declares foreground services of type `microphone` and `camera`, so fill in the "Foreground service permissions" form in Play Console (reason: "ongoing voice/video call").
+Custom notification icon: `OngoingCallService.smallIcon = R.drawable.ic_call` (default: your app icon).
+
 ## Push notifications
 
 To ring the phone when your app is closed, you need **your own Firebase project**: add your app to it, upload its service-account key in the RTCExpress portal, and register each device. See [docs/PUSH.md](../../docs/PUSH.md) for the full steps and FCM + ConnectionService integration.

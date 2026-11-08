@@ -128,7 +128,8 @@ class RtcExpressPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, RTCExpr
                             appId = opts["appId"] as? String ?: "",
                             userId = opts["userId"] as? String ?: "",
                             token = opts["token"] as? String ?: "",
-                            mediaMode = opts["mediaMode"] as? String ?: "auto"
+                            mediaMode = opts["mediaMode"] as? String ?: "auto",
+                            ongoingCallNotification = opts["ongoingCallNotification"] as? Boolean ?: true
                         )
                     )
                 }

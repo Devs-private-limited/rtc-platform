@@ -12,12 +12,17 @@ class RTCInitOptions {
   final String token;
   final String mediaMode;
 
+  /// Android: show an "Ongoing call" notification (tap = back to the app, Hang up button)
+  /// so calls keep working while the user is in another app or the screen is off.
+  final bool ongoingCallNotification;
+
   const RTCInitOptions({
     required this.serverUrl,
     required this.appId,
     required this.userId,
     required this.token,
     this.mediaMode = 'auto',
+    this.ongoingCallNotification = true,
   });
 
   Map<String, dynamic> toMap() => {
@@ -26,6 +31,7 @@ class RTCInitOptions {
         'userId': userId,
         'token': token,
         'mediaMode': mediaMode,
+        'ongoingCallNotification': ongoingCallNotification,
       };
 }
 
