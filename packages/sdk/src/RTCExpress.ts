@@ -401,7 +401,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
         void this.handleCallAccepted(message.payload as CallPeerPayload);
         break;
       case "call_reject":
-        this.handleCallEnded("rejected", message.payload as CallPeerPayload);
+        this.handleCallEnded("rejected", message.payload as CallPeerPayload, "declined");
         break;
       case "call_end":
         this.handleCallEnded("ended", message.payload as CallPeerPayload);
@@ -455,15 +455,17 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
         break;
       case "error": {
         const payload = message.payload as { message: string; code?: string };
+        // Tell the app why first (error), then end the call, so it can show the reason
+        // instead of "declined".
+        this.emit("error", payload);
         if (payload.code === "call_busy") {
           if (this.activeCall?.isCaller) {
-            this.cleanupCall("rejected");
+            this.cleanupCall("rejected", "busy");
           }
         } else if ((payload.code === "plan_feature_denied" || payload.code === "invalid_call") && this.activeCall?.isCaller) {
-          // The server refused our call (e.g. video not in the plan): don't leave it "ringing" forever.
-          this.cleanupCall("rejected");
+          // The server refused our call (e.g. video not in the plan, minutes used up): don't leave it "ringing" forever.
+          this.cleanupCall("rejected", "refused");
         }
-        this.emit("error", payload);
         break;
       }
     }
@@ -1066,12 +1068,12 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
     });
   }
 
-  private handleCallEnded(state: "ended" | "rejected", payload: CallPeerPayload) {
+  private handleCallEnded(state: "ended" | "rejected", payload: CallPeerPayload, reason?: "declined") {
     if (!this.activeCall || this.activeCall.callId !== payload.callId) return;
-    this.cleanupCall(state);
+    this.cleanupCall(state, reason);
   }
 
-  private cleanupCall(state: "ended" | "rejected") {
+  private cleanupCall(state: "ended" | "rejected", reason?: "declined" | "busy" | "refused") {
     if (!this.activeCall) return;
     this.stopQualityMonitoring();
     this.callMediaConnected = false;
@@ -1090,6 +1092,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
       roomId,
       mediaMode: this.resolvedMediaMode,
       callType,
+      ...(reason ? { reason } : {}),
     });
     this.emit("localStream", { stream: null });
     this.activeCall = null;

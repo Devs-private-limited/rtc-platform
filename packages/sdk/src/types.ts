@@ -121,6 +121,12 @@ export interface RTCEvents {
       roomId: string;
       mediaMode?: MediaMode;
       callType?: CallType;
+      /**
+       * Why a call ended as "rejected": "declined" (the other person said no), "busy" (they are in
+       * another call) or "refused" (the server refused the call, e.g. the plan or its minutes; the
+       * `error` event before this one has the message to show). Absent for older servers.
+       */
+      reason?: "declined" | "busy" | "refused";
     },
   ];
   voiceRoomJoined: [{ roomId: string; mediaMode: MediaMode }];
