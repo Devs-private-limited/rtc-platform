@@ -90,8 +90,29 @@ Group calls: `Listener.onMediaParticipant(roomId, userId, joined)` tells you who
 
 Calls keep working when the user goes to another app or turns the screen off. During a call the SDK shows an **"Ongoing call" notification** with a timer (tap it to go back to the app, or press **Hang up**), the same way WhatsApp does. Android requires this notification for an app to keep using the microphone/camera in the background. It's on by default; turn it off with `RTCInitOptions(..., ongoingCallNotification = false)` if your app has its own.
 
-Publishing on Google Play (target Android 14+): the SDK declares foreground services of type `microphone` and `camera`, so fill in the "Foreground service permissions" form in Play Console (reason: "ongoing voice/video call").
+Publishing on Google Play (target Android 14+): the SDK declares foreground services of type `microphone`, `camera` and `mediaProjection`, so fill in the "Foreground service permissions" form in Play Console (reasons: "ongoing voice/video call" and "screen sharing during a call").
 Custom notification icon: `OngoingCallService.smallIcon = R.drawable.ic_call` (default: your app icon).
+
+## Screen sharing
+
+Share the phone's screen in a 1:1 call or a group call (plan with screen sharing, Pro or higher; calls must go through the media server: `mediaMode = "auto"` or `"sfu"`). Android shows its own "Start recording or casting?" dialog first, and a notification while sharing.
+
+```kotlin
+// 1. Ask Android (from your Activity)
+val launcher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+    if (result.resultCode == Activity.RESULT_OK && result.data != null) rtc.startScreenShare(result.data!!)
+}
+rtc.checkCanShareScreen()                       // throws a clear message if not in a call
+launcher.launch(rtc.createScreenShareIntent())
+
+// 2. Stop (also stops by itself when the user taps "Stop" in Android's own controls)
+rtc.stopScreenShare()
+
+// 3. Others: listener.onScreenShare(userId, active). Show their screen big:
+CallVideoView(context).apply { screen = true; userId = "bob" }   // userId optional: newest screen
+```
+
+Cameras keep showing in their own views while someone shares, so you can show the screen big and the cameras small.
 
 ## Push notifications
 

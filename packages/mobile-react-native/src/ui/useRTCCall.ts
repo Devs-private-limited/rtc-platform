@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Vibration } from "react-native";
+import { Platform, Vibration } from "react-native";
 import type { RTCExpress } from "../index";
 import { requestCallPermissions } from "./permissions";
 import { isSpeaking } from "./theme";
@@ -38,6 +38,14 @@ export interface RTCCallController {
   minimize(): void;
   /** Show the call screen again. */
   restore(): void;
+  /** This phone is sharing its screen. */
+  sharingScreen: boolean;
+  /** User ID of the other person while they share their screen, else null. */
+  remoteScreenUserId: string | null;
+  /** Start/stop sharing this phone's screen (Android; plan must include screen sharing). */
+  toggleScreenShare(): void;
+  /** Screen sharing works on this device (Android). */
+  canShareScreen: boolean;
   /** Call someone in the room you joined. Asks for microphone (and camera) permission first. Resolves false if it could not start. */
   startCall(peerUserId: string, options?: { video?: boolean }): Promise<boolean>;
   /** Answer the incoming call. Asks for permissions first. */
@@ -82,6 +90,8 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
   const [cameraOff, setCameraOff] = useState(false);
   const [peerSpeaking, setPeerSpeaking] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [sharingScreen, setSharingScreen] = useState(false);
+  const [remoteScreenUserId, setRemoteScreenUserId] = useState<string | null>(null);
   const callRef = useRef<RTCCall | null>(null);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLoud = useRef(0);
@@ -102,6 +112,8 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
       if (!c || c.phase === "ended") return;
       const ended: RTCCall = { ...c, phase: "ended", endReason: reason, error: error ?? c.error };
       update(ended);
+      setSharingScreen(false);
+      setRemoteScreenUserId(null);
       setMuted(false);
       setCameraOff(false);
       setPeerSpeaking(false);
@@ -179,6 +191,12 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
         setPeerSpeaking((cur) => (cur === talking ? cur : talking));
       }),
       client.on("disconnected", () => finish(callRef.current?.connectedAt ? "ended" : "failed", "Connection lost")),
+      client.on("screenShare", (p: any) => {
+        if (!callRef.current || callRef.current.phase === "ended") return;
+        if (p?.local) setSharingScreen(!!p.active);
+        else if (p?.active) setRemoteScreenUserId(p.userId || null);
+        else setRemoteScreenUserId((cur) => (cur === p?.userId ? null : cur));
+      }),
     ];
     return () => offs.forEach((off) => off());
   }, [client, finish, update]);
@@ -263,6 +281,17 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
 
   const switchCamera = useCallback(() => client?.switchCamera(), [client]);
 
+  const toggleScreenShare = useCallback(() => {
+    if (!client || callRef.current?.phase !== "connected") return;
+    try {
+      if (sharingScreen) client.stopScreenShare();
+      else client.startScreenShare();
+    } catch (e) {
+      const c = callRef.current;
+      if (c) update({ ...c, error: e instanceof Error ? e.message : String(e) });
+    }
+  }, [client, sharingScreen, update]);
+
   const dismiss = useCallback(() => {
     if (callRef.current?.phase === "ended") update(null);
   }, [update]);
@@ -274,5 +303,7 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
   }, []);
   const restore = useCallback(() => setMinimized(false), []);
 
-  return { call, muted, cameraOff, peerSpeaking, minimized, minimize, restore, startCall, accept, decline, hangUp, toggleMute, toggleCamera, switchCamera, dismiss };
+  const canShareScreen = Platform.OS === "android";
+
+  return { call, muted, cameraOff, peerSpeaking, minimized, minimize, restore, sharingScreen, remoteScreenUserId, toggleScreenShare, canShareScreen, startCall, accept, decline, hangUp, toggleMute, toggleCamera, switchCamera, dismiss };
 }

@@ -144,11 +144,16 @@ export class SfuManager {
     peerId: string,
     transportId: string,
     kind: MediaKind,
-    rtpParameters: Parameters<WebRtcTransport["produce"]>[0]["rtpParameters"]
+    rtpParameters: Parameters<WebRtcTransport["produce"]>[0]["rtpParameters"],
+    source?: "camera" | "screen" | "microphone"
   ) {
     const transport = this.getTransport(roomId, peerId, transportId) as WebRtcTransport | null;
     if (!transport) throw new Error("Transport not found");
-    const producer = await transport.produce({ kind, rtpParameters });
+    const producer = await transport.produce({
+      kind,
+      rtpParameters,
+      appData: { source: source || (kind === "audio" ? "microphone" : "camera") },
+    });
     const room = this.getRoom(roomId)!;
     const peer = room.getOrCreatePeer(peerId);
     peer.producers.set(producer.id, producer);
@@ -188,14 +193,25 @@ export class SfuManager {
   listProducers(roomId: string, excludePeerId?: string) {
     const room = this.getRoom(roomId);
     if (!room) return [];
-    const items: { producerId: string; peerId: string; kind: MediaKind }[] = [];
+    const items: { producerId: string; peerId: string; kind: MediaKind; source: string }[] = [];
     for (const [peerId, peer] of room.peers) {
       if (peerId === excludePeerId) continue;
       for (const producer of peer.producers.values()) {
-        items.push({ producerId: producer.id, peerId, kind: producer.kind });
+        const source = (producer.appData as { source?: string })?.source || (producer.kind === "audio" ? "microphone" : "camera");
+        items.push({ producerId: producer.id, peerId, kind: producer.kind, source });
       }
     }
     return items;
+  }
+
+  /** The owner stopped this media (e.g. screen share). Its consumers close on the server too. */
+  closeProducer(roomId: string, peerId: string, producerId: string) {
+    const peer = this.getRoom(roomId)?.peers.get(peerId);
+    const producer = peer?.producers.get(producerId);
+    if (!peer || !producer) return false;
+    producer.close();
+    peer.producers.delete(producerId);
+    return true;
   }
 
   async createPlainConsumers(

@@ -10,7 +10,7 @@ import { callMediaRoomFor } from "../call-state.js";
 export async function registerMediaAuthorizeRoutes(app: FastifyInstance, deps: { jwtSecret: string; rooms: RoomStore; roomRoles: RoomRoleStore }) {
   app.post<{ Body: { roomId?: string; action?: string } }>("/v1/media/authorize", async (req, reply) => {
     const { roomId, action } = req.body || {};
-    const actions = ["read", "audio", "video", "recording-start", "recording-stop", "cdn-start", "cdn-stop"];
+    const actions = ["read", "audio", "video", "screen", "recording-start", "recording-stop", "cdn-start", "cdn-stop"];
     if (typeof roomId !== "string" || !roomId || !action || !actions.includes(action)) {
       return reply.status(400).send({ error: "Valid roomId and media action required" });
     }
@@ -20,14 +20,14 @@ export async function registerMediaAuthorizeRoutes(app: FastifyInstance, deps: {
     if ((action.startsWith("recording-") || action.startsWith("cdn-")) && !canModerate(role)) {
       return reply.status(403).send({ error: "Only the room host can manage recording or streaming" });
     }
-    if ((action === "audio" || action === "video") && !canPublish(role)) {
+    if ((action === "audio" || action === "video" || action === "screen") && !canPublish(role)) {
       return reply.status(403).send({ error: "Publishing is not allowed for this room role" });
     }
     // A downgrade must not prevent the host from stopping an existing job.
     // Media through the SFU is server-relayed group media, so audio needs
     // groupVoice: plain 1:1 voice (the Free plan) stays peer-to-peer.
     if (!action.endsWith("-stop")) {
-      const feature = action === "recording-start" ? "recording" : action === "cdn-start" ? "groupVideo" : action === "video" ? "video" : "groupVoice";
+      const feature = action === "recording-start" ? "recording" : action === "cdn-start" ? "groupVideo" : action === "video" ? "video" : action === "screen" ? "screenShare" : "groupVoice";
       const result = await checkAppFeature(claims.appId, feature);
       if (!result.allowed) return reply.status(403).send({ error: result.message });
     }

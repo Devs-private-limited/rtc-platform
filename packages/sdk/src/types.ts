@@ -133,6 +133,8 @@ export interface RTCEvents {
   mediaParticipantLeft: [import("@rtc/protocol").MediaParticipantPayload];
   localStream: [{ stream: MediaStream | null }];
   remoteTrack: [RemoteTrackEvent];
+  /** A remote track stopped, e.g. someone stopped sharing their screen: remove its video element. */
+  remoteTrackEnded: [Omit<RemoteTrackEvent, "stream">];
   recordingStarted: [{ callId?: string; roomId: string }];
   recordingReady: [RecordingReadyEvent];
   transcriptReady: [TranscriptReadyEvent];

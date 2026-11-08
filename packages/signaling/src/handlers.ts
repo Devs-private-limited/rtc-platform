@@ -99,7 +99,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
     return;
   }
   const roomId = (message.payload as { roomId?: unknown }).roomId;
-  const isPeerSignal = ["webrtc_offer", "webrtc_answer", "ice_candidate", "sfu_producer"].includes(message.type);
+  const isPeerSignal = ["webrtc_offer", "webrtc_answer", "ice_candidate", "sfu_producer", "sfu_producer_closed"].includes(message.type);
   if (!isPeerSignal && (typeof roomId !== "string" || !roomId.trim() || !assertRoomScope(ctx, roomId, ws))) {
     if (typeof roomId !== "string" || !roomId.trim()) ctx.send(ws, { type: "error", payload: { message: "roomId is required" } });
     return;
@@ -344,7 +344,10 @@ export async function handleClientMessage(ctx: HandlerContext) {
       break;
     }
 
-    case "sfu_producer": {
+    case "sfu_producer":
+    case "sfu_producer_closed": {
+      // sfu_producer_closed: the sender stopped this media (e.g. screen share) so others drop it.
+      const closing = message.type === "sfu_producer_closed";
       const payload = message.payload as {
         roomId: string;
         producerId: string;
@@ -382,7 +385,9 @@ export async function handleClientMessage(ctx: HandlerContext) {
         });
         return;
       }
-      if (payload.kind === "video") {
+      if (closing) {
+        // No plan check: stopping media is always allowed.
+      } else if (payload.kind === "video") {
         const feature: PlanFeature =
           payload.source === "screen" ? "screenShare" : "video";
         if (!(await requireFeature(ctx, feature))) return;
@@ -399,12 +404,12 @@ export async function handleClientMessage(ctx: HandlerContext) {
         source: payload.source,
       };
       if (payload.toUserId) {
-        await relayToUser(ctx, payload.toUserId, "sfu_producer", messagePayload);
+        await relayToUser(ctx, payload.toUserId, message.type, messagePayload);
       } else {
         const members = await ctx.rooms.getMembers(payload.roomId);
         for (const memberId of members) {
           if (memberId !== userId) {
-            await ctx.sendToUser(memberId, { type: "sfu_producer", payload: messagePayload });
+            await ctx.sendToUser(memberId, { type: message.type, payload: messagePayload });
           }
         }
       }

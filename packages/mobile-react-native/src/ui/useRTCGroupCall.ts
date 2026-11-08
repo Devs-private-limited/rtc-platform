@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 import type { RTCExpress } from "../index";
 import { requestCallPermissions } from "./permissions";
 import { isSpeaking } from "./theme";
@@ -25,6 +26,12 @@ export interface RTCGroupCallController {
   minimized: boolean;
   minimize(): void;
   restore(): void;
+  /** This phone is sharing its screen. */
+  sharingScreen: boolean;
+  /** Others sharing their screen right now, newest last. */
+  screenSharers: string[];
+  toggleScreenShare(): void;
+  canShareScreen: boolean;
   /** Join group voice or video in the room you joined with rtc.joinRoom(). */
   join(kind: "voice" | "video"): Promise<boolean>;
   leave(): void;
@@ -49,6 +56,8 @@ export function useRTCGroupCall(
   const [cameraOff, setCameraOff] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [minimized, setMinimized] = useState(false);
+  const [sharingScreen, setSharingScreen] = useState(false);
+  const [screenSharers, setScreenSharers] = useState<string[]>([]);
   const ref = useRef<RTCGroupCall | null>(null);
   const lastLoud = useRef<Record<string, number>>({});
 
@@ -61,6 +70,8 @@ export function useRTCGroupCall(
   const reset = useCallback(() => {
     update(() => null);
     setMinimized(false);
+    setSharingScreen(false);
+    setScreenSharers([]);
     setSpeaking([]);
     setMuted(false);
     setCameraOff(false);
@@ -93,7 +104,15 @@ export function useRTCGroupCall(
       client.on("mediaParticipant", (p: any) => {
         if (!ref.current || !p?.userId || p.userId === userId) return;
         if (p.joined) addPeople([p.userId]);
-        else update((g) => (g ? { ...g, participants: g.participants.filter((u) => u !== p.userId) } : g));
+        else {
+          update((g) => (g ? { ...g, participants: g.participants.filter((u) => u !== p.userId) } : g));
+          setScreenSharers((cur) => cur.filter((u) => u !== p.userId));
+        }
+      }),
+      client.on("screenShare", (p: any) => {
+        if (!ref.current) return;
+        if (p?.local) setSharingScreen(!!p.active);
+        else if (p?.userId) setScreenSharers((cur) => [...cur.filter((u) => u !== p.userId), ...(p.active ? [p.userId as string] : [])]);
       }),
       client.on("audioLevels", (levels: any) => {
         if (!ref.current) return;
@@ -155,10 +174,22 @@ export function useRTCGroupCall(
 
   const switchCamera = useCallback(() => client?.switchCamera(), [client]);
 
+  const toggleScreenShare = useCallback(() => {
+    if (!client || ref.current?.phase !== "connected") return;
+    try {
+      if (sharingScreen) client.stopScreenShare();
+      else client.startScreenShare();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [client, sharingScreen]);
+
   const minimize = useCallback(() => {
     if (ref.current) setMinimized(true);
   }, []);
   const restore = useCallback(() => setMinimized(false), []);
 
-  return { groupCall, speaking, muted, cameraOff, error, minimized, minimize, restore, join, leave, toggleMute, toggleCamera, switchCamera };
+  const canShareScreen = Platform.OS === "android";
+
+  return { groupCall, speaking, muted, cameraOff, error, minimized, minimize, restore, sharingScreen, screenSharers, toggleScreenShare, canShareScreen, join, leave, toggleMute, toggleCamera, switchCamera };
 }

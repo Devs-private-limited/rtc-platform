@@ -17,6 +17,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         fun onMediaParticipant(roomId: String, userId: String, joined: Boolean) {}
         /** About 3 times a second during SFU calls: loudness 0.0-1.0 per user (this user included). */
         fun onAudioLevels(levels: Map<String, Double>) {}
+        /** [userId] started (true) or stopped (false) sharing their screen. Your own userId = this phone. */
+        fun onScreenShare(userId: String, active: Boolean) {}
         fun onVoiceRoomJoined(roomId: String) {}
         fun onVoiceRoomLeft(roomId: String) {}
         fun onVideoRoomJoined(roomId: String) {}
@@ -57,6 +59,9 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     private var activeCall: ActiveCall? = null
     private var ongoingNotification = true
     private var ongoingSince = 0L
+    private var ongoingArgs = Triple("Ongoing call", false, "Tap to return to the call")
+    @Volatile private var sharingScreen = false
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var signalingReady = false
     private var pendingJoinRoomId: String? = null
 
@@ -160,7 +165,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 sendSignaling = { type, payload -> signaling.send(type, payload) },
                 onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
                 onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
-                onAudioLevels = { levels -> listener?.onAudioLevels(levels) }
+                onAudioLevels = { levels -> listener?.onAudioLevels(levels) },
+                onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) }
             )
         }
         try {
@@ -180,6 +186,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         if (!inVoiceRoom) return
         val room = roomId
         if (!inVideoRoom) {
+            screenShareEnded()
             sfu?.destroy()
             sfu = null
         }
@@ -204,7 +211,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 sendSignaling = { type, payload -> signaling.send(type, payload) },
                 onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
                 onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
-                onAudioLevels = { levels -> listener?.onAudioLevels(levels) }
+                onAudioLevels = { levels -> listener?.onAudioLevels(levels) },
+                onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) }
             )
         }
         try {
@@ -224,6 +232,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     fun leaveVideoRoom() {
         if (!inVideoRoom) return
         val room = roomId
+        screenShareEnded()
         sfu?.destroy()
         sfu = null
         inVideoRoom = false
@@ -432,6 +441,93 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         sfu?.handleRemoteProducer(payload)
     }
 
+    override fun onSfuProducerClosed(payload: JSONObject) {
+        sfu?.handleRemoteProducerClosed(payload)
+    }
+
+    /**
+     * Step 1 of screen sharing: launch this Intent with startActivityForResult (Android shows its
+     * "Start recording or casting?" dialog). Step 2: pass the result Intent to [startScreenShare].
+     */
+    fun createScreenShareIntent(): android.content.Intent {
+        val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+        return manager.createScreenCaptureIntent()
+    }
+
+    val isSharingScreen get() = sharingScreen
+
+    /** Throws with a clear message if screen sharing can't start now (call it before showing Android's dialog). */
+    fun checkCanShareScreen(): SfuMediaEngine {
+        return sfu ?: throw IllegalStateException(
+            if (activeCall != null) "Screen sharing needs server-relayed calls: use mediaMode \"auto\" or \"sfu\" on a plan with screen sharing (Pro)."
+            else "Join a call or group call before sharing your screen"
+        )
+    }
+
+    /**
+     * Share the screen in the current call or group video/voice room (plan must include screen
+     * sharing). [permissionData] = the result Intent from [createScreenShareIntent] (RESULT_OK).
+     * Everyone else gets onScreenShare(yourUserId, true). Errors arrive in onError.
+     */
+    fun startScreenShare(permissionData: android.content.Intent) {
+        if (sharingScreen) return
+        val engine = checkCanShareScreen()
+        if (ongoingSince == 0L) ongoingSince = System.currentTimeMillis()
+        // Android 10+: the screen may only be captured while a mediaProjection foreground service runs.
+        OngoingCallService.onStarted = { ok ->
+            if (!ok) {
+                listener?.onError("Could not start screen sharing on this phone")
+            } else worker.execute {
+                try {
+                    engine.startScreenShare(permissionData) { stopScreenShare() }
+                    sharingScreen = true
+                    listener?.onScreenShare(userId, true)
+                } catch (e: Exception) {
+                    val message = e.message ?: "unknown error"
+                    listener?.onError(
+                        if (message.contains("(403)")) "Screen sharing is not included in your current plan. Upgrade your plan to use this feature."
+                        else "Could not share your screen: $message"
+                    )
+                    restoreOngoingAfterScreen()
+                }
+            }
+        }
+        val (_, video, text) = ongoingArgs
+        if (!OngoingCallService.start(context, "Sharing your screen", text, video, ongoingSince, screen = true)) {
+            OngoingCallService.onStarted = null
+            listener?.onError("Could not start screen sharing on this phone")
+        }
+    }
+
+    /** Stop sharing the screen. Also called when the user stops it from Android's own controls. */
+    fun stopScreenShare() {
+        if (!sharingScreen) return
+        sharingScreen = false
+        val engine = sfu
+        worker.execute { runCatching { engine?.stopScreenShare() } }
+        listener?.onScreenShare(userId, false)
+        restoreOngoingAfterScreen()
+    }
+
+    /** Back to the normal "Ongoing call" notification (or none) after screen sharing. */
+    private fun restoreOngoingAfterScreen() {
+        val stillInCall = activeCall != null || inVoiceRoom || inVideoRoom
+        if (stillInCall && ongoingNotification) {
+            val (title, video, text) = ongoingArgs
+            OngoingCallService.start(context, title, text, video, ongoingSince)
+        } else {
+            OngoingCallService.stop(context)
+            ongoingSince = 0L
+        }
+    }
+
+    /** The SFU engine is going away (call ended / left the room): screen sharing ends with it. */
+    private fun screenShareEnded() {
+        if (!sharingScreen) return
+        sharingScreen = false
+        listener?.onScreenShare(userId, false)
+    }
+
     override fun onMediaParticipant(payload: JSONObject, joined: Boolean) {
         val room = payload.optString("roomId")
         val who = payload.optString("userId")
@@ -487,7 +583,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 sendSignaling = { type, payload -> signaling.send(type, payload) },
                 onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
                 onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
-                onAudioLevels = { levels -> listener?.onAudioLevels(levels) }
+                onAudioLevels = { levels -> listener?.onAudioLevels(levels) },
+                onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) }
             )
         }
         val sfuRoomId = "${call.roomId}-call-${call.callId}"
@@ -550,6 +647,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         val call = activeCall ?: return
         emitCallState(state, call.peerUserId, call.roomId, call.callId, call.callType)
         if (!inVoiceRoom && !inVideoRoom) {
+            screenShareEnded()
             sfu?.destroy()
             sfu = null
         }
@@ -561,7 +659,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
 
     /** Foreground service + "Ongoing call" notification while any call or group call is active. */
     private fun startOngoing(title: String, video: Boolean, text: String = "Tap to return to the call") {
-        if (!ongoingNotification) return
+        ongoingArgs = Triple(title, video, text)
+        if (!ongoingNotification || sharingScreen) return
         if (ongoingSince == 0L) ongoingSince = System.currentTimeMillis()
         if (!OngoingCallService.start(context, title, text, video, ongoingSince)) {
             listener?.onDiagnostics("Ongoing call notification not shown (microphone permission missing or app in background)")

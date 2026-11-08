@@ -340,6 +340,10 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
         this.remoteStreams.set(info.producerId, info.stream);
         this.emit("remoteTrack", info);
       });
+      this.sfu.onRemoteTrackEnded = (info) => {
+        this.remoteStreams.delete(info.producerId);
+        this.emit("remoteTrackEnded", info);
+      };
     }
     return this.sfu;
   }
@@ -416,6 +420,9 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
         void this.getP2p(this.activeCall?.callType === "video").handleIceCandidate(
           message.payload as WebRtcPayload
         );
+        break;
+      case "sfu_producer_closed":
+        this.sfu?.handleRemoteProducerClosed(message.payload as SfuProducerPayload);
         break;
       case "sfu_producer":
         if (this.sfu) {

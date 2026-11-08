@@ -32,20 +32,32 @@ class OngoingCallService : Service() {
         val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Ongoing call"
         val text = intent?.getStringExtra(EXTRA_TEXT) ?: "Tap to return to the call"
         val video = intent?.getBooleanExtra(EXTRA_VIDEO, false) ?: false
+        val screen = intent?.getBooleanExtra(EXTRA_SCREEN, false) ?: false
         val startedAt = intent?.getLongExtra(EXTRA_STARTED_AT, System.currentTimeMillis()) ?: System.currentTimeMillis()
         val notification = buildNotification(title, text, startedAt)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                if (video && granted(Manifest.permission.CAMERA)) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-                startForeground(NOTIFICATION_ID, notification, type)
+        val started = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                var type = 0
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    if (granted(Manifest.permission.RECORD_AUDIO)) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                    if (video && granted(Manifest.permission.CAMERA)) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                }
+                // Android 10+: capturing the screen needs a running service of this type.
+                if (screen) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                if (type != 0) startForeground(NOTIFICATION_ID, notification, type) else startForeground(NOTIFICATION_ID, notification)
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
+            true
         } catch (e: Exception) {
             // e.g. microphone permission not granted (Android 14): the call still works while the app is open.
             onError?.invoke("Ongoing call notification could not start: ${e.message}")
             stopSelf()
+            false
+        }
+        onStarted?.let { callback ->
+            onStarted = null
+            callback(started)
         }
         return START_NOT_STICKY
     }
@@ -102,20 +114,24 @@ class OngoingCallService : Service() {
         private const val EXTRA_TEXT = "text"
         private const val EXTRA_VIDEO = "video"
         private const val EXTRA_STARTED_AT = "startedAt"
+        private const val EXTRA_SCREEN = "screen"
 
         /** Notification icon (drawable resource). Default: the app icon. */
         @JvmStatic var smallIcon: Int = 0
         internal var onHangUp: (() -> Unit)? = null
         internal var onError: ((String) -> Unit)? = null
+        /** One-shot: called after the next start() reached startForeground (true) or failed (false). */
+        internal var onStarted: ((Boolean) -> Unit)? = null
 
-        internal fun start(context: Context, title: String, text: String, video: Boolean, startedAt: Long): Boolean {
+        internal fun start(context: Context, title: String, text: String, video: Boolean, startedAt: Long, screen: Boolean = false): Boolean {
             // Without microphone permission Android would refuse the service (and could crash the app).
-            if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return false
+            if (!screen && context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return false
             val intent = Intent(context, OngoingCallService::class.java)
                 .putExtra(EXTRA_TITLE, title)
                 .putExtra(EXTRA_TEXT, text)
                 .putExtra(EXTRA_VIDEO, video)
                 .putExtra(EXTRA_STARTED_AT, startedAt)
+                .putExtra(EXTRA_SCREEN, screen)
             return try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
                 true

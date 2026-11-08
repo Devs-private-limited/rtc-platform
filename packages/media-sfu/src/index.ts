@@ -81,7 +81,7 @@ app.post<{
 
 app.post<{
   Params: { roomId: string; transportId: string };
-  Body: { peerId?: string; kind?: string; rtpParameters?: unknown };
+  Body: { peerId?: string; kind?: string; rtpParameters?: unknown; source?: string };
 }>("/v1/rooms/:roomId/transports/:transportId/produce", async (req, reply) => {
   const peerId = req.body?.peerId?.trim();
   const kind = req.body?.kind;
@@ -93,10 +93,20 @@ app.post<{
     peerId,
     req.params.transportId,
     kind,
-    req.body.rtpParameters as never
+    req.body.rtpParameters as never,
+    req.body.source === "screen" || req.body.source === "camera" || req.body.source === "microphone" ? req.body.source : undefined
   );
   return { producerId: producer.id };
 });
+
+app.post<{ Params: { roomId: string; producerId: string }; Body: { peerId?: string } }>(
+  "/v1/rooms/:roomId/producers/:producerId/close",
+  async (req, reply) => {
+    const peerId = req.body?.peerId?.trim();
+    if (!peerId) return reply.status(400).send({ error: "peerId required" });
+    return { closed: sfu.closeProducer(req.params.roomId, peerId, req.params.producerId) };
+  }
+);
 
 app.get<{ Params: { roomId: string }; Querystring: { peerId?: string } }>(
   "/v1/rooms/:roomId/producers",

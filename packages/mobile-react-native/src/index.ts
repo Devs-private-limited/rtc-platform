@@ -60,6 +60,8 @@ export type RTCEventName =
   | "mediaParticipant"
   /** { [userId]: 0..1 } about 3 times a second in SFU calls (you included): highlight who is speaking. */
   | "audioLevels"
+  /** { userId, active, local, cancelled? } when someone (or this phone: local=true) starts/stops sharing their screen. */
+  | "screenShare"
   | "diagnostics"
   | "error";
 
@@ -133,6 +135,21 @@ export class RTCExpress {
 
   switchCamera(): void {
     Native.switchCamera();
+  }
+
+  /**
+   * Android: share this phone's screen in the current call / group call (plan must include screen
+   * sharing). Android first shows its own "Start recording or casting?" dialog. Listen to
+   * "screenShare" for the result and "error" for problems. Show others' screens with
+   * <RTCVideoView screen />.
+   */
+  startScreenShare(): void {
+    if (Platform.OS !== "android") throw new Error("Screen sharing on iOS is not supported yet");
+    Native.startScreenShare();
+  }
+
+  stopScreenShare(): void {
+    if (Platform.OS === "android") Native.stopScreenShare();
   }
 
   destroy(): void {

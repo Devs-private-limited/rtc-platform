@@ -33,7 +33,9 @@ class SfuMediaEngine(
     /** A remote person's media arrived (true) or they left (false). */
     private val onParticipant: (String, Boolean) -> Unit = { _, _ -> },
     /** Every 300 ms: how loud each person is (0.0-1.0), including this user. */
-    private val onAudioLevels: (Map<String, Double>) -> Unit = {}
+    private val onAudioLevels: (Map<String, Double>) -> Unit = {},
+    /** A remote person started (true) or stopped (false) sharing their screen. */
+    private val onRemoteScreen: (String, Boolean) -> Unit = { _, _ -> }
 ) {
     private val http = OkHttpClient()
     // Shared with P2P calls and CallVideoView: video frames can only be drawn by views
@@ -53,6 +55,15 @@ class SfuMediaEngine(
     private var camProducer: Producer? = null
     private val consumers = mutableMapOf<String, Consumer>()
     private val consumerUsers = mutableMapOf<String, String>() // producerId -> userId
+    private val screenConsumers = mutableSetOf<String>() // producerIds that are shared screens
+    // Which media the next send.produce() call is for (sent to the SFU and to the others).
+    @Volatile private var pendingSource = "microphone"
+    private var joinOptions = SfuJoinOptions()
+    private var screenCapturer: VideoCapturer? = null
+    private var screenHelper: SurfaceTextureHelper? = null
+    private var screenSource: VideoSource? = null
+    private var screenTrack: VideoTrack? = null
+    private var screenProducer: Producer? = null
     private val lock = Any()
     private var levelTimer: java.util.Timer? = null
     private var micMuted = false
@@ -116,6 +127,7 @@ class SfuMediaEngine(
 
     fun joinRoom(roomId: String, options: SfuJoinOptions) {
         this.roomId = roomId
+        joinOptions = options
         val base = sfuUrl.trimEnd('/')
         val joinJson = postJson(
             "$base/v1/rooms/${encode(roomId)}/join",
@@ -139,15 +151,21 @@ class SfuMediaEngine(
 
     /** Someone left the group call: stop their audio/video right away. */
     fun removeUser(remoteUserId: String) {
+        var hadScreen = false
         val closed = synchronized(lock) {
             val ids = consumerUsers.filterValues { it == remoteUserId }.keys.toList()
             ids.forEach { id ->
                 runCatching { consumers.remove(id)?.close() }
                 consumerUsers.remove(id)
+                if (screenConsumers.remove(id)) hadScreen = true
             }
             ids.isNotEmpty()
         }
         CallVideoTracks.updateUser(remoteUserId, null)
+        if (hadScreen) {
+            CallVideoTracks.updateScreen(remoteUserId, null)
+            onRemoteScreen(remoteUserId, false)
+        }
         if (closed) onParticipant(remoteUserId, false)
     }
 
@@ -200,7 +218,108 @@ class SfuMediaEngine(
         if (payload.getString("fromUserId") == userId) return
         val producerId = payload.getString("producerId")
         if (consumers.containsKey(producerId)) return
-        consumeProducer(sfuUrl.trimEnd('/'), currentRoom, producerId, payload.optString("fromUserId"))
+        consumeProducer(sfuUrl.trimEnd('/'), currentRoom, producerId, payload.optString("fromUserId"), payload.optString("source"))
+    }
+
+    /** The other person stopped some media (e.g. screen share): drop our copy so it doesn't freeze. */
+    fun handleRemoteProducerClosed(payload: JSONObject) {
+        val currentRoom = roomId ?: return
+        if (payload.optString("roomId") != currentRoom) return
+        val producerId = payload.optString("producerId")
+        var user: String? = null
+        var wasScreen = false
+        synchronized(lock) {
+            val consumer = consumers.remove(producerId) ?: return
+            runCatching { consumer.close() }
+            user = consumerUsers.remove(producerId)
+            wasScreen = screenConsumers.remove(producerId)
+        }
+        val who = user ?: payload.optString("fromUserId")
+        if (wasScreen && who.isNotBlank()) {
+            CallVideoTracks.updateScreen(who, null)
+            onRemoteScreen(who, false)
+        }
+    }
+
+    val isSharingScreen get() = screenProducer != null
+
+    /**
+     * Share this phone's screen with everyone in the call. [permissionData] is the result Intent of
+     * MediaProjectionManager.createScreenCaptureIntent(). A foreground service of type
+     * mediaProjection must already be running (Android 10+). Blocking: call off the main thread.
+     */
+    fun startScreenShare(permissionData: android.content.Intent, onStopped: () -> Unit) {
+        val send = sendTransport ?: throw IllegalStateException("Join a call first")
+        if (screenProducer != null) return
+        val capturer = org.webrtc.ScreenCapturerAndroid(permissionData, object : android.media.projection.MediaProjection.Callback() {
+            // The user tapped "Stop sharing" in Android's own notification or status bar chip.
+            override fun onStop() = onStopped()
+        })
+        val helper = SurfaceTextureHelper.create("sfu-screen", WebRtcPeerFactory.egl().eglBaseContext)
+        val source = factory.createVideoSource(true)
+        capturer.initialize(helper, context, source.capturerObserver)
+        val metrics = context.resources.displayMetrics
+        // Long side at most 1280 px: sharp enough to read text, light enough for mobile data.
+        val scale = minOf(1.0, 1280.0 / maxOf(metrics.widthPixels, metrics.heightPixels))
+        val width = (metrics.widthPixels * scale).toInt() / 2 * 2
+        val height = (metrics.heightPixels * scale).toInt() / 2 * 2
+        capturer.startCapture(width, height, 15)
+        val track = factory.createVideoTrack("screen0", source)
+        screenCapturer = capturer
+        screenHelper = helper
+        screenSource = source
+        screenTrack = track
+        try {
+            pendingSource = "screen"
+            screenProducer = send.produce({ }, track, null, null, null)
+        } catch (e: Exception) {
+            releaseScreen()
+            throw e
+        } finally {
+            pendingSource = "microphone"
+        }
+    }
+
+    /** Stop sharing and tell the server and the others. Blocking (HTTP): call off the main thread. */
+    fun stopScreenShare() {
+        val producer = screenProducer ?: run { releaseScreen(); return }
+        val producerId = producer.id
+        screenProducer = null
+        runCatching { producer.close() }
+        releaseScreen()
+        val room = roomId ?: return
+        runCatching {
+            postJson(
+                "${sfuUrl.trimEnd('/')}/v1/rooms/${encode(room)}/producers/$producerId/close",
+                JSONObject().put("peerId", userId)
+            )
+        }
+        runCatching {
+            sendSignaling(
+                "sfu_producer_closed",
+                JSONObject()
+                    .put("roomId", room)
+                    .put("producerId", producerId)
+                    .put("kind", "video")
+                    .put("source", "screen")
+                    .apply {
+                        joinOptions.targetUserId?.let { put("toUserId", it) }
+                        joinOptions.callId?.let { put("callId", it) }
+                    }
+            )
+        }
+    }
+
+    private fun releaseScreen() {
+        runCatching { screenCapturer?.stopCapture() }
+        screenCapturer?.dispose()
+        screenCapturer = null
+        screenTrack?.dispose()
+        screenTrack = null
+        screenSource?.dispose()
+        screenSource = null
+        screenHelper?.dispose()
+        screenHelper = null
     }
 
     fun muteMicrophone(muted: Boolean) {
@@ -229,6 +348,9 @@ class SfuMediaEngine(
             micProducer = null
             camProducer?.close()
             camProducer = null
+            screenProducer?.close()
+            screenProducer = null
+            screenConsumers.clear()
             consumers.values.forEach { runCatching { it.close() } }
             consumers.clear()
             consumerUsers.clear()
@@ -242,6 +364,7 @@ class SfuMediaEngine(
         device = null
         CallVideoTracks.update(true, null)
         CallVideoTracks.update(false, null)
+        releaseScreen()
         runCatching { videoCapturer?.stopCapture() }
         videoCapturer?.dispose()
         videoCapturer = null
@@ -289,6 +412,7 @@ class SfuMediaEngine(
                             .put("peerId", userId)
                             .put("kind", kind)
                             .put("rtpParameters", JSONObject(rtpParameters))
+                            .put("source", pendingSource)
                     )
                     val producerId = res.getString("producerId")
                     if (options.announceToRoom || options.targetUserId != null) {
@@ -299,6 +423,7 @@ class SfuMediaEngine(
                                 .put("producerId", producerId)
                                 .put("kind", kind)
                                 .apply {
+                                    if (pendingSource != "microphone") put("source", pendingSource)
                                     options.targetUserId?.let { put("toUserId", it) }
                                     options.callId?.let { put("callId", it) }
                                 }
@@ -352,11 +477,17 @@ class SfuMediaEngine(
             val source = factory.createAudioSource(MediaConstraints())
             audioSource = source
             audioTrack = factory.createAudioTrack("audio0", source)
+            pendingSource = "microphone"
             micProducer = send.produce({ }, audioTrack, null, null, null)
         }
         if (options.video) {
             startCamera()
-            videoTrack?.let { camProducer = send.produce({ }, it, null, null, null) }
+            pendingSource = "camera"
+            try {
+                videoTrack?.let { camProducer = send.produce({ }, it, null, null, null) }
+            } finally {
+                pendingSource = "microphone"
+            }
         }
     }
 
@@ -372,12 +503,12 @@ class SfuMediaEngine(
             val arr = json.optJSONArray("producers") ?: return
             for (i in 0 until arr.length()) {
                 val item = arr.getJSONObject(i)
-                consumeProducer(base, roomId, item.getString("producerId"), item.getString("peerId"))
+                consumeProducer(base, roomId, item.getString("producerId"), item.getString("peerId"), item.optString("source"))
             }
         }
     }
 
-    private fun consumeProducer(base: String, roomId: String, producerId: String, fromUserId: String) {
+    private fun consumeProducer(base: String, roomId: String, producerId: String, fromUserId: String, source: String = "") {
         val recv = recvTransport ?: return
         val mediasoupDevice = device ?: return
         if (consumers.containsKey(producerId)) return
@@ -391,7 +522,7 @@ class SfuMediaEngine(
         )
 
         val consumer = recv.consume(
-            { synchronized(lock) { consumers.remove(producerId); consumerUsers.remove(producerId) } },
+            { synchronized(lock) { consumers.remove(producerId); consumerUsers.remove(producerId); screenConsumers.remove(producerId) } },
             res.getString("consumerId"),
             producerId,
             res.getString("kind"),
@@ -402,10 +533,15 @@ class SfuMediaEngine(
             val first = fromUserId.isNotBlank() && !consumerUsers.containsValue(fromUserId)
             consumers[producerId] = consumer
             if (fromUserId.isNotBlank()) consumerUsers[producerId] = fromUserId
+            if (source == "screen") screenConsumers.add(producerId)
             first
         }
         val track = consumer.track
-        if (track is VideoTrack) {
+        if (track is VideoTrack && source == "screen") {
+            // Shared screens go to RTCVideoView(screen); cameras stay where they are.
+            CallVideoTracks.updateScreen(fromUserId, track)
+            onRemoteScreen(fromUserId, true)
+        } else if (track is VideoTrack) {
             CallVideoTracks.update(false, track) // newest remote camera shows in RTCVideoView
             if (fromUserId.isNotBlank()) CallVideoTracks.updateUser(fromUserId, track) // RTCVideoView(userId=...)
             onRemoteVideo(track)

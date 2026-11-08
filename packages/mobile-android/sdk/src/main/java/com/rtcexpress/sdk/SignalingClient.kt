@@ -28,6 +28,8 @@ class SignalingClient(
         fun onWebRtcAnswer(payload: JSONObject)
         fun onWebRtcIceCandidate(payload: JSONObject)
         fun onSfuProducer(payload: JSONObject)
+        /** Someone stopped some media (e.g. screen share). */
+        fun onSfuProducerClosed(payload: JSONObject) {}
         /** Someone joined or left group voice/video in a room this user is in. */
         fun onMediaParticipant(payload: JSONObject, joined: Boolean) {}
         fun onError(message: String, code: String? = null)
@@ -122,6 +124,7 @@ class SignalingClient(
             "webrtc_answer" -> listener?.onWebRtcAnswer(payload)
             "ice_candidate" -> listener?.onWebRtcIceCandidate(payload)
             "sfu_producer" -> listener?.onSfuProducer(payload)
+            "sfu_producer_closed" -> listener?.onSfuProducerClosed(payload)
             "media_participant_joined" -> listener?.onMediaParticipant(payload, true)
             "media_participant_left" -> listener?.onMediaParticipant(payload, false)
             "error" -> listener?.onError(

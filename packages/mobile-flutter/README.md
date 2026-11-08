@@ -94,7 +94,27 @@ SizedBox(width: 96, height: 128, child: RTCVideoView(local: true)); // self view
 
 Calls keep working when the user goes to another app or turns the screen off. During a call the SDK shows an **"Ongoing call" notification** with a timer (tap it to go back to the app, or press **Hang up**), the same way WhatsApp does. Android requires this notification for an app to keep using the microphone/camera in the background. It's on by default; turn it off with `ongoingCallNotification: false` in init if your app has its own.
 
-Publishing on Google Play (target Android 14+): the SDK declares foreground services of type `microphone` and `camera`, so fill in the "Foreground service permissions" form in Play Console (reason: "ongoing voice/video call").
+Publishing on Google Play (target Android 14+): the SDK declares foreground services of type `microphone`, `camera` and `mediaProjection`, so fill in the "Foreground service permissions" form in Play Console (reasons: "ongoing voice/video call" and "screen sharing during a call").
+
+## Screen sharing (Android)
+
+Share the phone's screen in a call (plan with screen sharing, Pro or higher; `mediaMode: 'auto'`). Android shows its own "Start recording or casting?" dialog first.
+
+```dart
+await rtc.startScreenShare();   // stopScreenShare() to stop
+rtc.on('screenShare', (e) {
+  // {userId, active, local, cancelled?}: local = this phone
+});
+
+// Someone else shares: their screen big, cameras small
+Column(children: [
+  Expanded(child: RTCVideoView(screen: true, userId: e['userId'])),
+  Row(children: [
+    SizedBox(width: 96, height: 128, child: RTCVideoView()),            // their camera
+    SizedBox(width: 96, height: 128, child: RTCVideoView(local: true)), // you
+  ]),
+]);
+```
 
 ## Example
 

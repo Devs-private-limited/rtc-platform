@@ -103,6 +103,15 @@ test("SFU call producers relay only between authorized connected participants", 
     assert.equal(ctx.delivered.length, 1);
     assert.equal(ctx.delivered[0].type, "sfu_producer");
   }
+  // Stopping a screen share is relayed to the other person (no plan check needed).
+  const closed = context({ type: "sfu_producer_closed", payload: { ...payload, producerId: "screen-1", source: "screen" } });
+  closed.claims.roomId = "chat-room";
+  closed.roomRoles.assign("chat-room", "alice", "publisher");
+  await closed.rooms.join("chat-room", "alice");
+  await handleClientMessage(closed);
+  assert.equal(closed.delivered.length, 1);
+  assert.equal(closed.delivered[0].type, "sfu_producer_closed");
+  assert.equal((closed.delivered[0].payload as { producerId: string }).producerId, "screen-1");
   for (const change of [{toUserId:"mallory"}, {roomId:"wrong"}, {callId:"wrong"}]) {
     const ctx = context({type:"sfu_producer",payload:{...payload,...change}});
     await ctx.rooms.join("chat-room", "alice"); await handleClientMessage(ctx);

@@ -13,4 +13,7 @@ class RTCVideoViewManager : SimpleViewManager<CallVideoView>() {
     /** Group video: show this person's camera. */
     @ReactProp(name = "userId")
     fun setUserId(view: CallVideoView, userId: String?) { view.userId = userId }
+    /** Show a shared screen (of userId, or the newest one) instead of a camera. */
+    @ReactProp(name = "screen", defaultBoolean = false)
+    fun setScreen(view: CallVideoView, screen: Boolean) { view.screen = screen }
 }

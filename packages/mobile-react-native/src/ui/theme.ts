@@ -52,6 +52,10 @@ export interface RTCCallLabels {
   failed: string;
   ongoingCall: string;
   tapToReturn: string;
+  shareScreen: string;
+  stopSharing: string;
+  youAreSharing: string;
+  isSharing: string;
 }
 
 export const defaultCallLabels: RTCCallLabels = {
@@ -81,6 +85,10 @@ export const defaultCallLabels: RTCCallLabels = {
   failed: "Call failed",
   ongoingCall: "Ongoing call",
   tapToReturn: "Tap to return",
+  shareScreen: "Share",
+  stopSharing: "Stop share",
+  youAreSharing: "You're sharing your screen",
+  isSharing: "is sharing their screen",
 };
 
 /** Audio level (0..1) above which someone counts as speaking. */

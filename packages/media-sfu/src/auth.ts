@@ -44,7 +44,7 @@ export function createAuthHook(jwtSecret: string, signalingUrl = process.env.SIG
         if (path.endsWith("/produce")) {
           const kind = (req.body as { kind?: string })?.kind;
           if (kind !== "audio" && kind !== "video") return reply.status(400).send({ error: "Invalid media kind" });
-          action = kind;
+          action = kind === "video" && (req.body as { source?: string })?.source === "screen" ? "screen" : kind;
         } else if (path.endsWith("/recording/start")) action = "recording-start";
         else if (path.endsWith("/recording/stop")) action = "recording-stop";
         else if (path.endsWith("/cdn-stream/start")) action = "cdn-start";

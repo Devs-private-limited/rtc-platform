@@ -1,6 +1,11 @@
 package com.rtcexpress.flutter
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
+import io.flutter.plugin.common.PluginRegistry
 import android.os.Handler
 import android.os.Looper
 import java.util.concurrent.Executors
@@ -20,13 +25,42 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
-class RtcExpressPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, RTCExpress.Listener {
+class RtcExpressPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, RTCExpress.Listener, ActivityAware {
     private val main = Handler(Looper.getMainLooper())
     private var worker = Executors.newSingleThreadExecutor()
     private var attached = false
     private lateinit var channel: MethodChannel
     private lateinit var events: EventChannel
     private var eventSink: EventChannel.EventSink? = null
+    private var activityBinding: ActivityPluginBinding? = null
+    private var myUserId = ""
+
+    // Android's "Start recording or casting?" dialog answers here.
+    private val screenResult = PluginRegistry.ActivityResultListener { requestCode, resultCode, data ->
+        if (requestCode != SCREEN_SHARE_REQUEST) return@ActivityResultListener false
+        if (resultCode == Activity.RESULT_OK && data != null) {
+            worker.execute {
+                try { rtc?.startScreenShare(data) } catch (e: Exception) { emit("error", mapOf("message" to (e.message ?: "Screen share failed"))) }
+            }
+        } else {
+            emit("screenShare", mapOf("userId" to myUserId, "active" to false, "local" to true, "cancelled" to true))
+        }
+        true
+    }
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activityBinding = binding
+        binding.addActivityResultListener(screenResult)
+    }
+    override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) = onAttachedToActivity(binding)
+    override fun onDetachedFromActivity() {
+        activityBinding?.removeActivityResultListener(screenResult)
+        activityBinding = null
+    }
+
+    override fun onScreenShare(userId: String, active: Boolean) =
+        emit("screenShare", mapOf("userId" to userId, "active" to active, "local" to (userId == myUserId)))
     private var rtc: RTCExpress? = null
     private var appContext: Context? = null
 
@@ -35,7 +69,12 @@ class RtcExpressPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, RTCExpr
         attached = true
         binding.platformViewRegistry.registerViewFactory("rtcexpress/video", object : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
             override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
-                val view = CallVideoView(context).apply { local = (args as? Map<*, *>)?.get("local") == true }
+                val params = args as? Map<*, *>
+                val view = CallVideoView(context).apply {
+                    local = params?.get("local") == true
+                    userId = (params?.get("userId") as? String)?.ifBlank { null }
+                    screen = params?.get("screen") == true
+                }
                 // WRAP_CONTENT lets WebRTC's aspect-fit measurement size the
                 // renderer independently of Flutter's exact platform-view bounds.
                 val container = android.widget.FrameLayout(context).apply {
@@ -119,6 +158,7 @@ class RtcExpressPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, RTCExpr
             "init" -> {
                 val ctx = appContext ?: return result.error("no_context", "No context", null)
                 val opts = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+                myUserId = opts["userId"] as? String ?: ""
                 rtc?.destroy()
                 rtc = RTCExpress(ctx).also {
                     it.setListener(this)
@@ -168,6 +208,14 @@ class RtcExpressPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, RTCExpr
                 result.success(null)
             }
             "switchCamera" -> { rtc?.switchCamera(); result.success(null) }
+            "startScreenShare" -> {
+                val r = rtc!!
+                r.checkCanShareScreen()
+                val activity = activityBinding?.activity ?: return result.error("no_activity", "Open the app before sharing the screen", null)
+                main.post { activity.startActivityForResult(r.createScreenShareIntent(), SCREEN_SHARE_REQUEST) }
+                result.success(null)
+            }
+            "stopScreenShare" -> { rtc?.stopScreenShare(); result.success(null) }
             "destroy" -> { rtc?.destroy(); rtc = null; result.success(null) }
             else -> result.notImplemented()
         }
@@ -204,4 +252,8 @@ class RtcExpressPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, RTCExpr
         emit("remoteVideo", mapOf("trackId" to track.id()))
     override fun onDiagnostics(message: String) = emit("diagnostics", mapOf("message" to message))
     override fun onError(message: String) = emit("error", mapOf("message" to message))
+
+    companion object {
+        private const val SCREEN_SHARE_REQUEST = 48213
+    }
 }

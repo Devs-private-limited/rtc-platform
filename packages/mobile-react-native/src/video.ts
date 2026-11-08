@@ -5,6 +5,8 @@ export type RTCVideoViewProps = ViewProps & {
   local?: boolean;
   /** Group video: show this person's camera (default: the newest remote camera). */
   userId?: string;
+  /** Show a shared screen instead of a camera: this userId's, or the newest one. */
+  screen?: boolean;
 };
 
 /** Native video renderer for the active call. Android only for now. */

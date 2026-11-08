@@ -24,7 +24,7 @@ export interface CallScreenProps {
 export function CallScreen({ controller, displayName, theme: themeIn, labels: labelsIn, style }: CallScreenProps) {
   const theme = { ...defaultCallTheme, ...themeIn };
   const t = { ...defaultCallLabels, ...labelsIn };
-  const { call, muted, cameraOff, peerSpeaking } = controller;
+  const { call, muted, cameraOff, peerSpeaking, sharingScreen, remoteScreenUserId } = controller;
   const now = useNow(call?.phase === "connected");
 
   // Android back button must not navigate the app behind an active call.
@@ -43,13 +43,31 @@ export function CallScreen({ controller, displayName, theme: themeIn, labels: la
   const name = displayName ? displayName(call.peerUserId) : call.peerUserId;
   const ringingHere = call.direction === "incoming" && call.phase === "ringing";
   const ended = call.phase === "ended";
-  const showVideo = call.video && !ended && !ringingHere && Platform.OS === "android";
-  const showRemote = showVideo && call.phase === "connected";
+  const connected = call.phase === "connected";
+  // The other person shares their screen: screen big, cameras small at the bottom.
+  const showScreen = !!remoteScreenUserId && connected && Platform.OS === "android";
+  const showVideo = (call.video || showScreen) && !ended && !ringingHere && Platform.OS === "android";
+  const showRemote = showVideo && connected;
 
   return (
     <View style={[StyleSheet.absoluteFill, styles.root, { backgroundColor: theme.background }, style]}>
       <StatusBar barStyle="light-content" />
-      {showVideo && (
+      {showScreen && (
+        <View style={StyleSheet.absoluteFill}>
+          <RTCVideoView screen userId={remoteScreenUserId!} style={styles.fill} />
+          {call.video && (
+            <View style={styles.strip}>
+              <View style={styles.stripTile}>
+                <RTCVideoView local={false} style={styles.fill} />
+              </View>
+              <View style={styles.stripTile}>
+                {cameraOff ? <CallAvatar name={t.you} size={40} theme={theme} /> : <RTCVideoView local style={styles.fill} />}
+              </View>
+            </View>
+          )}
+        </View>
+      )}
+      {showVideo && !showScreen && (
         <View style={StyleSheet.absoluteFill}>
           {showRemote ? <RTCVideoView local={false} style={styles.fill} /> : !cameraOff && <RTCVideoView local style={styles.fill} />}
           {showRemote && (
@@ -66,7 +84,15 @@ export function CallScreen({ controller, displayName, theme: themeIn, labels: la
         <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
           {name}
         </Text>
-        <Text style={[styles.status, { color: theme.mutedText }]}>{statusText(call, t, now, peerSpeaking)}</Text>
+        <Text style={[styles.status, { color: theme.mutedText }]}>
+          {showScreen ? `${t.isSharing} · ` : ""}
+          {statusText(call, t, now, peerSpeaking)}
+        </Text>
+        {sharingScreen && !ended && (
+          <View style={[styles.sharingPill, { backgroundColor: theme.hangUp }]}>
+            <Text style={styles.sharingText}>● {t.youAreSharing}</Text>
+          </View>
+        )}
         {!!call.error && <Text style={[styles.error, { color: "#fecaca" }]}>{call.error}</Text>}
       </View>
 
@@ -82,6 +108,9 @@ export function CallScreen({ controller, displayName, theme: themeIn, labels: la
               <CallButton icon={muted ? "🔇" : "🎤"} label={muted ? t.unmute : t.mute} active={muted} onPress={controller.toggleMute} theme={theme} />
               {call.video && <CallButton icon="📷" label={cameraOff ? t.cameraOn : t.cameraOff} active={cameraOff} onPress={controller.toggleCamera} theme={theme} />}
               {call.video && <CallButton icon="🔄" label={t.flip} onPress={controller.switchCamera} theme={theme} />}
+              {connected && controller.canShareScreen && (
+                <CallButton icon="🖥️" label={sharingScreen ? t.stopSharing : t.shareScreen} active={sharingScreen} onPress={controller.toggleScreenShare} theme={theme} />
+              )}
               <CallButton icon="📞" label={t.hangUp} color={theme.hangUp} rotateIcon onPress={controller.hangUp} theme={theme} />
             </>
           )}
@@ -106,9 +135,13 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   selfView: { position: "absolute", right: 16, top: 48, width: 104, height: 150, borderRadius: 12, overflow: "hidden", backgroundColor: "#000", alignItems: "center", justifyContent: "center" },
   top: { alignItems: "center", paddingTop: 96, paddingHorizontal: 24 },
-  topOverVideo: { paddingTop: 48, alignItems: "flex-start", paddingRight: 140, paddingBottom: 8 },
+  topOverVideo: { paddingTop: 40, alignItems: "flex-start", paddingLeft: 68, paddingRight: 132, paddingBottom: 8 },
+  strip: { position: "absolute", left: 0, right: 0, bottom: 150, flexDirection: "row", justifyContent: "center", gap: 10 },
+  stripTile: { width: 96, height: 128, borderRadius: 12, overflow: "hidden", backgroundColor: "#000", alignItems: "center", justifyContent: "center" },
+  sharingPill: { marginTop: 10, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 5 },
+  sharingText: { color: "#ffffff", fontSize: 13, fontWeight: "600" },
   name: { fontSize: 28, fontWeight: "600", marginTop: 20, textShadowColor: "rgba(0,0,0,0.5)", textShadowRadius: 4 },
   status: { fontSize: 15, marginTop: 6, textShadowColor: "rgba(0,0,0,0.5)", textShadowRadius: 4 },
   error: { fontSize: 13, marginTop: 10, textAlign: "center" },
-  buttons: { flexDirection: "row", justifyContent: "space-evenly", alignItems: "flex-start", paddingBottom: 56, paddingHorizontal: 12 },
+  buttons: { flexDirection: "row", justifyContent: "space-evenly", alignItems: "flex-start", paddingBottom: 56, paddingHorizontal: 6 },
 });

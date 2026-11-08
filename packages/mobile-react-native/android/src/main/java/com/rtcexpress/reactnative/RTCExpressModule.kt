@@ -1,6 +1,9 @@
 package com.rtcexpress.reactnative
 
+import android.app.Activity
+import android.content.Intent
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.BaseActivityEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -19,6 +22,51 @@ class RTCExpressModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext), RTCExpress.Listener {
 
     private var rtc: RTCExpress? = null
+    private var myUserId = ""
+
+    // Android's "Start recording or casting?" dialog answers here.
+    private val activityListener = object : BaseActivityEventListener() {
+        override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
+            if (requestCode != SCREEN_SHARE_REQUEST) return
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                runRtc { rtc?.startScreenShare(data) }
+            } else {
+                emit("screenShare", Arguments.createMap().apply {
+                    putString("userId", myUserId); putBoolean("active", false); putBoolean("local", true); putBoolean("cancelled", true)
+                })
+            }
+        }
+    }
+
+    init {
+        reactContext.addActivityEventListener(activityListener)
+    }
+
+    /** Asks Android for permission (system dialog), then shares the screen in the current call. */
+    @ReactMethod
+    fun startScreenShare() {
+        runRtc {
+            val r = rtc ?: return@runRtc
+            r.checkCanShareScreen()
+            val activity = reactContext.currentActivity ?: throw IllegalStateException("Open the app before sharing the screen")
+            activity.startActivityForResult(r.createScreenShareIntent(), SCREEN_SHARE_REQUEST)
+        }
+    }
+
+    @ReactMethod
+    fun stopScreenShare() {
+        runRtc { rtc?.stopScreenShare() }
+    }
+
+    override fun onScreenShare(userId: String, active: Boolean) {
+        emit("screenShare", Arguments.createMap().apply {
+            putString("userId", userId); putBoolean("active", active); putBoolean("local", userId == myUserId)
+        })
+    }
+
+    companion object {
+        private const val SCREEN_SHARE_REQUEST = 48213
+    }
 
     override fun getName() = "RTCExpress"
 
@@ -60,6 +108,7 @@ class RTCExpressModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun init(options: ReadableMap, promise: Promise) {
         try {
+            myUserId = options.getString("userId") ?: ""
             val rtcExpress = RTCExpress(reactContext.applicationContext)
             rtcExpress.setListener(this)
             rtcExpress.init(

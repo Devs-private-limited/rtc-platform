@@ -1,5 +1,7 @@
 ## 0.1.2
 
+- Android: screen sharing in calls (`startScreenShare()` / `stopScreenShare()`, `screenShare` event, `RTCVideoView(screen: true)`), the same way as the web SDK. Needs a plan with screen sharing.
+- `RTCVideoView(userId: ...)` shows one person's camera in group video.
 - Android: calls keep working in other apps and with the screen off. An "Ongoing call" notification with a timer and a Hang up button is shown during calls (turn off with `ongoingCallNotification: false`).
 
 ## 0.1.1

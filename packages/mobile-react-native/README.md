@@ -113,6 +113,7 @@ What you get:
 - **In call:** timer, Mute, Camera on/off and Flip (video), End. Video calls show the other person full screen and you in a small corner window. "speaking" shows when the other person talks (paid plans).
 - **After the call:** "Call ended", "Call declined", "Missed call" or "Call failed" with the reason, for 1.5 seconds.
 - Microphone/camera permission is asked for you before calling or answering (Android).
+- **Screen sharing** (Android, Pro plan): a **Share** button in calls. When the other person shares, their screen shows big and the cameras small at the bottom; group calls show the screen big with everyone in a row below it. A red "You're sharing your screen" label shows while you share.
 - **Minimize:** the Android back button (or the ⌄ arrow) hides the call screen while the call continues, so people can use the rest of your app. Add the ongoing-call bar to get back:
 
 ```tsx
@@ -154,11 +155,28 @@ Want your own design instead? Use only the hook: `call.call` has `peerUserId`, `
 
 Note: the screens show calls while your app is open. To ring a phone when the app is closed, also set up push (see "Incoming calls when the app is closed" in the docs).
 
+## Screen sharing (Android)
+
+The call screens above already have a Share button. Without the UI kit:
+
+```tsx
+rtc.startScreenShare();    // Android asks "Start recording or casting?" first
+rtc.stopScreenShare();
+rtc.on('screenShare', (p) => {}); // { userId, active, local, cancelled? }
+
+// Someone shares: their screen big, cameras small
+<RTCVideoView screen userId={p.userId} style={{ flex: 1 }} />
+<RTCVideoView style={{ width: 96, height: 128 }} />        // their camera
+<RTCVideoView local style={{ width: 96, height: 128 }} />  // you
+```
+
+Needs a plan with screen sharing (Pro or higher) and calls through the media server (`mediaMode: 'auto'`, the default). Browser users of the web SDK see a phone's shared screen, and phones see a browser's shared screen.
+
 ## Calls in the background (Android)
 
 Calls keep working when the user goes to another app or turns the screen off. During a call the SDK shows an **"Ongoing call" notification** with a timer (tap it to go back to the app, or press **Hang up**), the same way WhatsApp does. Android requires this notification for an app to keep using the microphone/camera in the background. It's on by default; turn it off with `ongoingCallNotification: false` in `rtc.init()` if your app has its own.
 
-Publishing on Google Play (target Android 14+): the SDK declares foreground services of type `microphone` and `camera`, so fill in the "Foreground service permissions" form in Play Console (reason: "ongoing voice/video call").
+Publishing on Google Play (target Android 14+): the SDK declares foreground services of type `microphone`, `camera` and `mediaProjection`, so fill in the "Foreground service permissions" form in Play Console (reasons: "ongoing voice/video call" and "screen sharing during a call").
 
 ## Support
 

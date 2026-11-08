@@ -127,5 +127,13 @@ class RTCExpress {
   }
 
   Future<void> switchCamera() async => _channel.invokeMethod('switchCamera');
+
+  /// Android: share this phone's screen in the current call (plan must include screen sharing).
+  /// Android first shows its own "Start recording or casting?" dialog. Listen to the
+  /// 'screenShare' event ({userId, active, local, cancelled?}) and show others' screens with
+  /// `RTCVideoView(screen: true)`.
+  Future<void> startScreenShare() async => _channel.invokeMethod('startScreenShare');
+
+  Future<void> stopScreenShare() async => _channel.invokeMethod('stopScreenShare');
   Future<void> destroy() async => _channel.invokeMethod('destroy');
 }

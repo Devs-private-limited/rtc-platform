@@ -31,6 +31,7 @@ export interface RemoteTrackInfo {
 }
 
 export type OnRemoteTrack = (info: RemoteTrackInfo) => void;
+export type OnRemoteTrackEnded = (info: Omit<RemoteTrackInfo, "stream">) => void;
 
 type CameraFacing = "user" | "environment";
 
@@ -51,6 +52,9 @@ export class SfuMediaEngine {
   private roomId: string | null = null;
   private producerMeta = new Map<string, { source: MediaSource; kind: MediaKind }>();
   private pendingProduceSource: MediaSource = "microphone";
+  private joinOptions: MediaJoinOptions = {};
+  /** Called when a remote person stops some media, e.g. their screen share. */
+  onRemoteTrackEnded?: OnRemoteTrackEnded;
 
   constructor(
     private sfuUrl: string,
@@ -68,6 +72,7 @@ export class SfuMediaEngine {
   }
 
   async joinRoom(roomId: string, options: MediaJoinOptions = {}) {
+    this.joinOptions = options;
     const recvOnly = options.recvOnly === true;
     const audio = !recvOnly && options.audio !== false;
     const video = !recvOnly && options.video === true;
@@ -119,6 +124,25 @@ export class SfuMediaEngine {
     };
   }
 
+  handleRemoteProducerClosed(payload: SfuProducerPayload) {
+    if (!this.roomId || payload.roomId !== this.roomId) return;
+    const consumer = this.consumers.get(payload.producerId);
+    if (!consumer) return;
+    consumer.close();
+    this.consumers.delete(payload.producerId);
+    const audio = this.remoteAudios.get(payload.producerId);
+    if (audio) {
+      audio.srcObject = null;
+      this.remoteAudios.delete(payload.producerId);
+    }
+    this.onRemoteTrackEnded?.({
+      producerId: payload.producerId,
+      userId: payload.fromUserId,
+      kind: (payload.kind || consumer.kind) as MediaKind,
+      source: payload.source || (consumer.kind === "audio" ? "microphone" : "camera"),
+    });
+  }
+
   async handleRemoteProducer(payload: SfuProducerPayload) {
     if (!this.roomId || payload.roomId !== this.roomId) return;
     if (payload.fromUserId === this.userId) return;
@@ -155,6 +179,30 @@ export class SfuMediaEngine {
     const producer = this.producers.get("screen");
     producer?.close();
     this.producers.delete("screen");
+    if (producer && this.roomId) {
+      const roomId = this.roomId;
+      // Tell the server and the others, so their copy of the screen goes away instead of freezing.
+      void fetch(`${this.sfuUrl.replace(/\/$/, "")}/v1/rooms/${encodeURIComponent(roomId)}/producers/${producer.id}/close`, {
+        method: "POST",
+        headers: this.apiHeaders(),
+        body: JSON.stringify({ peerId: this.userId }),
+      }).catch(() => undefined);
+      try {
+        this.sendSignal({
+          type: "sfu_producer_closed",
+          payload: {
+            roomId,
+            producerId: producer.id,
+            toUserId: this.joinOptions.targetUserId,
+            callId: this.joinOptions.callId,
+            kind: "video",
+            source: "screen",
+          },
+        });
+      } catch {
+        /* signaling closed: the server cleans up when we leave */
+      }
+    }
     this.screenStream?.getTracks().forEach((t) => t.stop());
     this.screenStream = null;
   }
@@ -255,7 +303,7 @@ export class SfuMediaEngine {
           {
             method: "POST",
             headers: this.apiHeaders(),
-            body: JSON.stringify({ peerId: this.userId, kind, rtpParameters }),
+            body: JSON.stringify({ peerId: this.userId, kind, rtpParameters, source: this.pendingProduceSource }),
           }
         );
         const { producerId } = await produceRes.json();
@@ -353,8 +401,9 @@ export class SfuMediaEngine {
       { headers: { Authorization: `Bearer ${this.authToken}` } }
     );
     const { producers } = await res.json();
-    for (const item of producers as { producerId: string; peerId: string; kind: MediaKind }[]) {
-      await this.consumeProducer(base, roomId, item.producerId, item.peerId, item.kind);
+    for (const item of producers as { producerId: string; peerId: string; kind: MediaKind; source?: string }[]) {
+      const source = item.source === "screen" || item.source === "camera" ? item.source : undefined;
+      await this.consumeProducer(base, roomId, item.producerId, item.peerId, item.kind, source);
     }
   }
 

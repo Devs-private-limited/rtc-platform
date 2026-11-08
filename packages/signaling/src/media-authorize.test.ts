@@ -26,8 +26,11 @@ test("media authorization enforces current plan, project membership, and host ro
   }
   assert.equal(await status("audio"), 200);
   assert.equal(await status("video"), 403);
+  assert.equal(await status("screen"), 403);
   plan = "pro";
   assert.equal(await status("video"), 200);
+  assert.equal(await status("screen"), 200);
+  assert.equal(await status("screen", "viewer"), 403);
   assert.equal(await status("recording-start", "viewer"), 403);
   assert.equal(await status("audio", "viewer"), 403);
   assert.equal(await status("read", "viewer"), 200);
