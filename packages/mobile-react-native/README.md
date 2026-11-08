@@ -7,6 +7,7 @@ React Native SDK for [RTCExpress](https://rtc.devsquarelabs.com): add **voice ca
 - Mute microphone/camera, switch camera, accept/reject/end
 - Native video renderer (`RTCVideoView`, Android)
 - Push device registration helper (`RTCPushClient`)
+- **Ready-made call screens** (`CallScreen`, `GroupCallScreen`): incoming, ringing, in-call and group call UI in a few lines
 
 **Website:** https://rtc.devsquarelabs.com · **Docs:** https://rtc.devsquarelabs.com/docs · Also on [npm for web](https://www.npmjs.com/package/rtcexpress) and [pub.dev for Flutter](https://pub.dev/packages/rtcexpress) · **For AI tools:** https://rtc.devsquarelabs.com/llms-full.txt
 
@@ -80,6 +81,70 @@ rtc.destroy();
 ```
 
 Events: `connected`, `disconnected`, `roomJoined`, `message`, `callInvite`, `callState`, `remoteVideo`, `groupMedia`, `mediaParticipant` (`{ roomId, userId, joined }`), `audioLevels` (`{ [userId]: 0..1 }`, highlight who is speaking), `diagnostics`, `error`.
+
+## Ready-made call screens (UI kit)
+
+Don't want to design call screens yourself? Use the built-in ones. No extra packages needed.
+
+```tsx
+import RTCExpress, { useRTCCall, CallScreen } from 'rtcexpress-react-native';
+
+const rtc = new RTCExpress(); // init + joinRoom as shown above
+
+export default function App() {
+  const call = useRTCCall(rtc);
+
+  return (
+    <View style={{ flex: 1 }}>
+      <Button title="Voice call Bob" onPress={() => call.startCall('bob')} />
+      <Button title="Video call Bob" onPress={() => call.startCall('bob', { video: true })} />
+
+      {/* Last in your root view: covers the app while a call is ringing or active */}
+      <CallScreen controller={call} />
+    </View>
+  );
+}
+```
+
+What you get:
+
+- **Incoming call:** caller name, Answer / Decline, the phone vibrates while it rings.
+- **Outgoing call:** "Ringing…", then "Connecting…".
+- **In call:** timer, Mute, Camera on/off and Flip (video), End. Video calls show the other person full screen and you in a small corner window. "speaking" shows when the other person talks (paid plans).
+- **After the call:** "Call ended", "Call declined", "Missed call" or "Call failed" with the reason, for 1.5 seconds.
+- Microphone/camera permission is asked for you before calling or answering (Android).
+- The Android back button doesn't leave a call by accident.
+
+**Group calls** (Pro plan or higher) in the room you joined:
+
+```tsx
+import { useRTCGroupCall, GroupCallScreen } from 'rtcexpress-react-native';
+
+const group = useRTCGroupCall(rtc, myUserId);
+
+<Button title="Start group video" onPress={() => group.join('video')} /> // or 'voice'
+<GroupCallScreen controller={group} userId={myUserId} title="Family" />
+{group.error && <Text>{group.error}</Text>} // e.g. plan doesn't include group calls
+```
+
+One tile per person (camera or initials), a green frame around whoever is speaking, people count + timer, and Mute / Camera / Flip / Leave.
+
+**Make it yours:**
+
+```tsx
+<CallScreen
+  controller={call}
+  displayName={(userId) => contacts[userId]?.name ?? userId}
+  theme={{ background: '#111827', accept: '#10b981' }}
+  labels={{ answer: 'Accept', hangUp: 'Hang up' }} // any text, e.g. another language
+/>
+```
+
+`useRTCCall(rtc, { onCallEnded })` lets you save each call in your own call history: `call.endReason` is `ended`, `declined`, `missed`, `cancelled` or `failed`.
+
+Want your own design instead? Use only the hook: `call.call` has `peerUserId`, `video`, `direction`, `phase` (`ringing` / `connecting` / `connected` / `ended`), `connectedAt`, and the controller has `accept`, `decline`, `hangUp`, `toggleMute`, `toggleCamera` and `switchCamera`. `CallAvatar` and `CallButton` are exported too.
+
+Note: the screens show calls while your app is open. To ring a phone when the app is closed, also set up push (see "Incoming calls when the app is closed" in the docs).
 
 ## Support
 

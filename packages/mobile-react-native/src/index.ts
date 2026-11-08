@@ -1,4 +1,4 @@
-import { DeviceEventEmitter, Platform, NativeModules, NativeEventEmitter, requireNativeComponent, type EmitterSubscription, type HostComponent, type ViewProps } from "react-native";
+import { DeviceEventEmitter, Platform, NativeModules, NativeEventEmitter, type EmitterSubscription } from "react-native";
 export { RTCPushClient, type PushDeviceRegistration } from './push';
 
 const LINKING_ERROR =
@@ -19,20 +19,7 @@ const emitter = Platform.OS === "android" ? DeviceEventEmitter : new NativeEvent
 
 export type MediaMode = "p2p" | "sfu" | "auto";
 
-export type RTCVideoViewProps = ViewProps & {
-  /** true renders the local camera preview; false (default) the remote video. */
-  local?: boolean;
-  /** Group video: show this person's camera (default: the newest remote camera). */
-  userId?: string;
-};
-
-/** Native video renderer for the active call. Android only for now. */
-export const RTCVideoView: HostComponent<RTCVideoViewProps> =
-  Platform.OS === "android"
-    ? requireNativeComponent<RTCVideoViewProps>("RTCVideoView")
-    : ((() => {
-        throw new Error("RTCVideoView currently supports Android only");
-      }) as unknown as HostComponent<RTCVideoViewProps>);
+export { RTCVideoView, type RTCVideoViewProps } from "./video";
 
 export interface RTCInitOptions {
   serverUrl: string;
@@ -151,3 +138,12 @@ export class RTCExpress {
 }
 
 export default RTCExpress;
+
+// Ready-made call screens (UI kit).
+export { useRTCCall, type RTCCall, type RTCCallController, type CallPhase, type CallEndReason, type UseRTCCallOptions } from "./ui/useRTCCall";
+export { useRTCGroupCall, type RTCGroupCall, type RTCGroupCallController } from "./ui/useRTCGroupCall";
+export { CallScreen, type CallScreenProps } from "./ui/CallScreen";
+export { GroupCallScreen, type GroupCallScreenProps } from "./ui/GroupCallScreen";
+export { CallAvatar, CallButton } from "./ui/parts";
+export { requestCallPermissions } from "./ui/permissions";
+export { defaultCallTheme, defaultCallLabels, type RTCCallTheme, type RTCCallLabels } from "./ui/theme";
