@@ -20,6 +20,7 @@ const copies = [
 ];
 const files = [
   { from: pkg('mobile-android/sdk/src/main/AndroidManifest.xml'), to: pkg('mobile-flutter/android/src/main/AndroidManifest.xml') },
+  { from: pkg('mobile-android/sdk/src/main/AndroidManifest.xml'), to: pkg('mobile-react-native/android/src/main/AndroidManifest.xml') },
 ];
 const check = process.argv.includes('--check');
 
