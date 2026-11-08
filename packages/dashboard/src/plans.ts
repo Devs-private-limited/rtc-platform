@@ -18,7 +18,7 @@ export async function renderPlansPage(view: HTMLElement) {
           <tr class="group"><td colspan="${ids.length + 1}">Price</td></tr>
           ${row('Monthly', (p) => price(p.price.monthlyUsd, 'month'))}
           ${row('Yearly', (p) => price(p.price.yearlyUsd, 'year'))}
-          <tr class="group"><td colspan="${ids.length + 1}">Included every month</td></tr>
+          <tr class="group"><td colspan="${ids.length + 1}">Included (Free: one time · paid plans: per paid month)</td></tr>
           ${row('Voice call minutes', (p) => `${num(p.limits.voiceMinutes)} min`)}
           ${row('Video call minutes', (p) => (p.limits.videoMinutes ? `${num(p.limits.videoMinutes)} min` : '<span class="dim">—</span>'))}
           ${row('Chat messages', (p) => num(p.limits.messages))}
@@ -26,7 +26,7 @@ export async function renderPlansPage(view: HTMLElement) {
           <tr class="group"><td colspan="${ids.length + 1}">Features</td></tr>
           ${FEATURES.map(([k, l]) => row(l, (p) => yes(!!p.features[k]))).join('')}
         </tbody></table></div>
-        <p class="note">Minutes are participant minutes per calendar month (UTC). Limits are allowances, not hard stops: at 80% the customer gets a warning and is asked to upgrade.</p>
+        <p class="note">Minutes are participant minutes. <strong>Free</strong> is a one-time trial (no time limit) and never comes back after a project has paid. <strong>Paid plans</strong> count from the customer's payment date, per paid month; yearly plans get 12× for the whole year. Limits are real: when something is used up, new calls, group joins or messages are refused (calls in progress continue). The owner is emailed at 80% and 100%. <strong>Minute packs</strong> (one-time, paid plans): +20,000 voice for $6, +5,000 video for $8 (Pro), until the plan renews. Prices are plus local tax. Group video: up to 8 cameras per call.</p>
       </section>
       <section class="panel how"><h2>How to change these</h2>
         <div class="how-grid">

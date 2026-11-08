@@ -71,15 +71,15 @@ export function sendUsageLimitEmail(
   const lines = u.level === 100
     ? u.trial
       ? [usedLine, `<strong>New ${escHtml(action)} in your app are now paused.</strong> The free trial is one time only, so choose a plan to turn them back on (it takes effect within a minute).`, "Questions? Just reply to this email."]
-      : [usedLine, `<strong>New ${escHtml(action)} in your app are paused until ${escHtml(u.resetsOn || "your plan renews")}</strong>, when your plan renews. Anything already running was not cut.`, "To continue right away, upgrade your plan in the console (it takes effect within a minute). Questions? Just reply to this email."]
+      : [usedLine, `<strong>New ${escHtml(action)} in your app are paused until ${escHtml(u.resetsOn || "your plan renews")}</strong>, when your plan renews. Anything already running was not cut.`, "To continue right away, buy a minute pack (one-time: +20,000 voice minutes for $6, or +5,000 video minutes for $8 on Pro) or upgrade your plan in the console. Either takes effect within a minute. Questions? Just reply to this email."]
     : u.trial
       ? [usedLine, `When it is used up, new ${escHtml(action)} in your app will stop. The free trial is one time only.`, "Choose a plan before then so your users aren't interrupted."]
-      : [usedLine, `When all ${fmt(u.limit)} are used, <strong>new ${escHtml(action)} in your app will stop until ${escHtml(u.resetsOn || "your plan renews")}</strong>.`, "If you expect more usage before then, upgrade your plan in the console to avoid a pause for your users."];
+      : [usedLine, `When all ${fmt(u.limit)} are used, <strong>new ${escHtml(action)} in your app will stop until ${escHtml(u.resetsOn || "your plan renews")}</strong>.`, "If you expect more usage before then, buy a minute pack or upgrade your plan in the console to avoid a pause for your users."];
   return send(
     [to],
     title,
     `${lines.join("\n\n").replace(/<[^>]+>/g, "")}\n\nPlans: ${billingUrl}`,
-    branded(title, lines, { text: u.level === 100 ? (u.trial ? "Choose a plan" : "Upgrade now") : "See plans", href: billingUrl }),
+    branded(title, lines, { text: u.level === 100 ? (u.trial ? "Choose a plan" : "Buy minutes or upgrade") : "See options", href: billingUrl }),
     "support@devsquarelabs.com"
   );
 }

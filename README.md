@@ -179,17 +179,23 @@ Webhook events: `call.quality.report`, `call.quality.degraded`
 
 ## Phase 7 — Billing + usage metering
 
-Usage-based billing with plan tiers, limit tracking, and cost estimates.
+Flat plans with real limits (nothing is charged per minute). Source of truth: `packages/signaling/src/billing-plans.ts`.
 
 ### Plans
 
-| Plan | Features | Call minutes | Messages |
-|------|----------|-------------|----------|
-| Free | Chat only | 100 | 1,000 |
-| Starter | Chat + voice + group voice | 1,000 | 10,000 |
-| Pro | Chat + voice + video + recording + screen share | 10,000 | 100,000 |
+| Plan | Price | Features | Voice minutes | Video minutes | Chat messages |
+|------|-------|----------|---------------|---------------|---------------|
+| Free trial | $0 | Chat + 1:1 voice | 2,000 (one time) | — | 10,000 (one time) |
+| Starter | $9/mo or $90/yr | + group voice | 30,000 per paid month | — | 100,000 per paid month |
+| Pro | $29/mo or $290/yr | + 1:1/group video (up to 8 cameras), screen share, recording | 50,000 per paid month | 10,000 per paid month | 500,000 per paid month |
 
-Feature gating is enforced server-side (chat, voice calls, video calls, group media, recording).
+- Free is a one-time trial (no time limit); it never comes back after a project has paid.
+- Paid usage counts from the payment date per paid month; yearly plans get 12x for the whole year.
+- Minute packs (one-time, paid plans): +20,000 voice for $6, +5,000 video for $8, until the plan renews.
+- Used up: new calls / group joins / messages are refused (`plan_feature_denied`, `reason: "minutes_exhausted"`); calls in progress continue. Owner emails at 80% and 100%.
+- Prices are in USD plus local tax at checkout (Dodo Payments).
+
+Feature gating and limits are enforced server-side (chat, voice calls, video calls, group media, screen share, recording).
 Change a project's plan in the dashboard **Billing** tab or `PATCH /v1/admin/apps/:appId/plan`.
 
 ### Admin API

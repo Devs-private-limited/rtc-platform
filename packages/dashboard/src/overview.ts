@@ -63,7 +63,7 @@ export async function renderOverviewPage(view: HTMLElement) {
 const GROUPS: [key: string, title: string, tip: string, tone: string][] = [
   ['paymentProblems', 'Payment problems', 'Failed or cancelled payments in the last 30 days. Check the Dodo dashboard and contact the customer.', 'bad'],
   ['cancellations', 'Cancelled or cancelling', 'Paid plans that ended or will end. A short “why did you leave?” email can bring them back.', 'bad'],
-  ['nearLimit', 'Near or over their limit', 'Using 80% or more of this month’s allowance: a good moment to suggest an upgrade, or give extra minutes.', 'warn'],
+  ['nearLimit', 'Near or over their limit', 'Using 80% or more of their allowance: a good moment to suggest an upgrade, or give extra minutes.', 'warn'],
   ['spikes', 'Unusual usage spikes', 'A quarter of the monthly allowance used in 24 hours. Could be a launch, or abuse: take a look.', 'warn'],
   ['neverUsed', 'Signed up, never used their app', 'More than 3 days since sign-up and no chat or calls yet. A friendly “need help getting started?” email helps.', 'info'],
   ['notVerified', 'Email not verified', 'More than 3 days and still not verified. They may have typed a wrong email or missed the message.', 'info'],

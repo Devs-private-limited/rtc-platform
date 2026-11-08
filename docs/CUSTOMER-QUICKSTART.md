@@ -2,7 +2,7 @@
 
 ## Get a project
 
-Create an account on the website. Save the App ID and one-time App Secret. Free enables chat; Starter adds voice; Pro adds video. Paid activation is still manual while payments are deferred.
+Create an account on the website. Save the App ID and one-time App Secret. The Free trial (one time) includes chat (10,000 messages) and 1:1 voice calls (2,000 minutes); Starter ($9/month) adds group voice; Pro ($29/month) adds video calls and screen sharing. Subscribe in the console under Billing (Dodo Payments, prices in USD plus local tax).
 
 Use separate project credentials and separate deployments for staging and production. Account-level multi-project management is not available yet; an operator can provision additional apps through the admin API.
 

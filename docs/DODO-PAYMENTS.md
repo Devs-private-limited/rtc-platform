@@ -23,10 +23,17 @@ Test IDs were read from a screenshot (25 Oct 2026). Letters like I/l/1 and O/0 c
 
 Descriptions:
 
-- **Starter (Monthly):** Chat plus 1:1 and group voice calling for one RTCExpress project: up to 1,000 chat MAU and 30,000 voice participant minutes per month, webhooks and email support. Billed monthly, cancel anytime.
-- **Starter (Yearly):** Chat plus 1:1 and group voice calling for one RTCExpress project: up to 1,000 chat MAU and 30,000 voice participant minutes per month, webhooks and email support. Billed yearly (2 months free), cancel anytime.
-- **Pro (Monthly):** Chat, voice and video calling with screen sharing for one RTCExpress project: up to 5,000 chat MAU, 50,000 voice and 10,000 video participant minutes per month, priority email support. Billed monthly, cancel anytime.
-- **Pro (Yearly):** Chat, voice and video calling with screen sharing for one RTCExpress project: up to 5,000 chat MAU, 50,000 voice and 10,000 video participant minutes per month, priority email support. Billed yearly (2 months free), cancel anytime.
+- **Starter (Monthly):** Chat plus 1:1 and group voice calling for one RTCExpress project: 100,000 chat messages and 30,000 voice participant minutes each paid month, webhooks and email support. Billed monthly, cancel anytime.
+- **Starter (Yearly):** Chat plus 1:1 and group voice calling for one RTCExpress project: 1,200,000 chat messages and 360,000 voice participant minutes for the year, usable any time, webhooks and email support. Billed yearly (2 months free), cancel anytime.
+- **Pro (Monthly):** Chat, voice and video calling (group video up to 8 cameras) with screen sharing for one RTCExpress project: 500,000 chat messages, 50,000 voice and 10,000 video participant minutes each paid month, priority email support. Billed monthly, cancel anytime.
+- **Pro (Yearly):** Chat, voice and video calling (group video up to 8 cameras) with screen sharing for one RTCExpress project: 6,000,000 chat messages, 600,000 voice and 120,000 video participant minutes for the year, usable any time, priority email support. Billed yearly (2 months free), cancel anytime.
+
+Minute packs (Pricing Type **One-time payment**, created in Live 8 Nov 2026, names must match exactly):
+
+| Name | Price | Description |
+|---|---|---|
+| RTCExpress Voice Minutes Pack | 6 | 20,000 extra voice participant minutes for one RTCExpress project on a paid plan, added right away and usable until the plan renews. One-time payment. |
+| RTCExpress Video Minutes Pack | 8 | 5,000 extra video participant minutes for one RTCExpress project on the Pro plan, added right away and usable until the plan renews. One-time payment. |
 
 ## How it works (Phase 2, built 25 Oct 2026)
 

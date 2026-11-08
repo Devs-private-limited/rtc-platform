@@ -172,7 +172,6 @@ function manageSection(c: any, data: any, planLimit: number | undefined) {
   if (!canEdit()) return `<section class="panel"><h2>Manage</h2><p class="note">Your access is view-only, so you can’t change plans or minutes.</p></section>`;
   const paid = c.plan !== 'free' && c.subscription_status === 'active';
   const grants = data.bonusGrants || [];
-  const month = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
   return `<section class="panel manage"><h2>Manage</h2>
     <div class="manage-grid">
       <form id="m-plan" class="manage-card">
@@ -186,13 +185,13 @@ function manageSection(c: any, data: any, planLimit: number | undefined) {
       </form>
       <form id="m-bonus" class="manage-card">
         <h3>Give extra minutes</h3>
-        <p class="note">Adds call minutes for <strong>${esc(month)}</strong> only, on top of the ${planLimit ? `${num(planLimit)}-minute` : ''} plan allowance. Next month goes back to normal.</p>
+        <p class="note">Adds voice minutes on top of the ${planLimit ? `${num(planLimit)}-minute` : ''} plan allowance for the customer's <strong>current plan period</strong> (until their plan renews; on Free, to the one-time trial). They don't carry over.</p>
         <div class="quick">${[500, 1000, 5000].map((m) => `<button type="button" class="secondary small" data-quick="${m}">+${num(m)}</button>`).join('')}</div>
         <label>Minutes<input name="minutes" type="number" min="1" max="1000000" step="1" required placeholder="e.g. 1000"></label>
         <label><span>Reason <span class="sub">(saved in the history)</span></span><input name="note" required maxlength="300" placeholder="e.g. Goodwill after a server issue"></label>
         <label class="check"><input type="checkbox" name="notify" checked> Email the customer (“complimentary minutes added”)</label>
         <button type="submit">Add minutes</button><div class="m-msg" role="status"></div>
-        ${grants.length ? `<h4>Extra minutes this month</h4><ul class="grants">${grants.map((g: any) => `<li><span><strong>+${num(g.minutes)} min</strong> · ${esc(g.note || '')}<span class="sub">by ${esc(g.granted_by || '—')}, ${when(g.created_at)}</span></span><button type="button" class="danger small" data-grant="${esc(g.id)}">Remove</button></li>`).join('')}</ul>` : ''}
+        ${grants.length ? `<h4>Extra minutes added this month (gifts and minute packs)</h4><ul class="grants">${grants.map((g: any) => `<li><span><strong>+${num(g.minutes)} min</strong> · ${esc(g.note || '')}<span class="sub">by ${esc(g.granted_by || '—')}, ${when(g.created_at)}</span></span><button type="button" class="danger small" data-grant="${esc(g.id)}">Remove</button></li>`).join('')}</ul>` : ''}
       </form>
       ${accessCard(c, data)}
     </div></section>`;

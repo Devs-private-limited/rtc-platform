@@ -69,7 +69,7 @@ rtc.endCall();
 <RTCVideoView local={false} style={{ flex: 1 }} />
 <RTCVideoView local style={{ width: 96, height: 128 }} />
 
-// Group voice/video in the current room (Android; Pro plan or higher):
+// Group voice/video in the current room (Android; group voice needs Starter, group video needs Pro):
 rtc.joinVideoRoom();       // or joinVoiceRoom()
 rtc.on('mediaParticipant', (p) => console.log(p.userId, p.joined ? 'joined' : 'left'));
 rtc.on('audioLevels', (levels) => setSpeaking(levels)); // { alice: 0.8, bob: 0.1 }, ~3x a second
