@@ -570,7 +570,11 @@ class SfuMediaEngine(
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
         http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IllegalStateException("SFU request failed (${response.code})")
+            if (!response.isSuccessful) {
+                // Keep "(code)" for callers that look for it, and add the server's reason (e.g. minutes used up).
+                val reason = runCatching { JSONObject(response.body?.string() ?: "").optString("error") }.getOrNull().orEmpty()
+                throw IllegalStateException("SFU request failed (${response.code})" + if (reason.isNotBlank()) ": $reason" else "")
+            }
             return JSONObject(response.body?.string() ?: "{}")
         }
     }

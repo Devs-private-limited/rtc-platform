@@ -59,8 +59,8 @@ export interface PlanDefinition {
 }
 
 /**
- * Flat monthly plans. Limits are allowances, not hard caps: crossing 80% sends a
- * `billing.threshold` alert and the customer is asked to upgrade. Nothing is
+ * Flat monthly plans. Voice/video minutes are monthly limits: the owner is emailed at 80% and 100%
+ * (usage-limits.ts) and new calls are refused once they are used up. Nothing is
  * ever charged per minute.
  */
 export const BILLING_PLANS: Record<BillingPlan, PlanDefinition> = {

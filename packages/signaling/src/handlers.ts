@@ -26,6 +26,7 @@ import { endCallSession, startCallSession } from "./metering.js";
 import { saveRecording } from "./recordings.js";
 import { saveQualityReport } from "./quality.js";
 import { maybeDispatchBillingAlert } from "./billing.js";
+import { checkMinutes, maybeSendUsageEmails, type MinuteKind } from "./usage-limits.js";
 import { checkAppFeature } from "./plan-features.js";
 import type { PlanFeature } from "./billing-plans.js";
 import {
@@ -88,6 +89,19 @@ async function requireFeature(
       plan: result.plan,
     },
   });
+  return false;
+}
+
+/** Refuse a new call / group join when this month's minutes are used up. */
+async function requireMinutes(ctx: HandlerContext, kind: MinuteKind): Promise<boolean> {
+  const check = await checkMinutes(ctx.claims.appId, kind);
+  if (check.allowed) return true;
+  ctx.send(ctx.ws, {
+    type: "error",
+    // Same code as "not in your plan" so already-published SDKs stop the caller's ringing too.
+    payload: { message: check.message, code: "plan_feature_denied", reason: "minutes_exhausted", kind, used: check.used, limit: check.limit },
+  });
+  void maybeSendUsageEmails(ctx.claims.appId);
   return false;
 }
 
@@ -230,6 +244,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
       }
       const feature: PlanFeature = callType === "video" ? "video" : "voice";
       if (!(await requireFeature(ctx, feature))) return;
+      if (!(await requireMinutes(ctx, callType))) return;
 
       const busy = registerRinging(ctx.claims.appId, callId, roomId, userId, toUserId, callType);
       if (!busy.ok) {
@@ -317,6 +332,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
       if (message.type === "call_end") {
         await endCallSession(ctx.claims.appId, payload.callId, "hangup");
         await maybeDispatchBillingAlert(ctx.claims.appId, (type, p) => ctx.dispatch(type, p));
+        void maybeSendUsageEmails(ctx.claims.appId);
       } else if (message.type === "call_reject") {
         // No session exists for a call that was never accepted, so this is a
         // no-op in the normal case. It matters when the callee rejects a second
@@ -436,6 +452,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
       if (message.type === "join_media") {
         const feature: PlanFeature = kind === "video" ? "groupVideo" : "groupVoice";
         if (!(await requireFeature(ctx, feature))) return;
+        if (!(await requireMinutes(ctx, kind))) return;
         const role = ctx.roomRoles.get(roomId, userId);
         if (isAudience(role)) {
           ctx.send(ws, {
@@ -465,6 +482,7 @@ export async function handleClientMessage(ctx: HandlerContext) {
       }
       ctx.dispatch(joining ? "media.joined" : "media.left", { roomId, userId, kind });
       await maybeDispatchBillingAlert(ctx.claims.appId, (type, p) => ctx.dispatch(type, p));
+      if (!joining) void maybeSendUsageEmails(ctx.claims.appId);
       break;
     }
 

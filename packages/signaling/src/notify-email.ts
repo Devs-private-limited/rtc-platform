@@ -54,6 +54,34 @@ export function sendExtraMinutesEmail(to: string, minutes: number, month: string
   return send([to], `${title} to your RTCExpress project`, `${lines.join("\n\n").replace(/<[^>]+>/g, "")}\n\nOpen your console: ${consoleUrl}`, branded(title, lines, { text: "Open your console", href: consoleUrl }));
 }
 
+/** 80%: "almost used up, calls will stop at 100%". 100%: "used up, new calls are paused". */
+export function sendUsageLimitEmail(
+  to: string,
+  u: { kind: "voice" | "video"; level: 80 | 100; used: number; limit: number; planName: string; month: string; resetsOn: string }
+) {
+  const m = monthName(u.month), billingUrl = `${website()}/#/portal/billing`;
+  const what = `${u.kind} call minutes`;
+  const title = u.level === 100 ? `Your ${what} for ${m} are used up` : `You've used ${Math.min(99, Math.floor((u.used / u.limit) * 100))}% of your ${what}`;
+  const lines = u.level === 100
+    ? [
+        `Your RTCExpress project has used <strong>${fmt(Math.round(u.used))} of ${fmt(u.limit)}</strong> ${escHtml(what)} included in the <strong>${escHtml(u.planName)}</strong> plan for ${escHtml(m)}.`,
+        `<strong>New ${escHtml(u.kind)} calls in your app are paused until ${escHtml(u.resetsOn)}.</strong> Calls that were already running were not cut.`,
+        "To restart calls right away, upgrade your plan in the console (it takes effect within a minute). Questions? Just reply to this email.",
+      ]
+    : [
+        `Your RTCExpress project has used <strong>${fmt(Math.round(u.used))} of ${fmt(u.limit)}</strong> ${escHtml(what)} included in the <strong>${escHtml(u.planName)}</strong> plan for ${escHtml(m)}.`,
+        `When all ${fmt(u.limit)} minutes are used, <strong>new ${escHtml(u.kind)} calls in your app will stop until ${escHtml(u.resetsOn)}</strong>.`,
+        "If you expect more calls this month, upgrade your plan in the console to avoid a pause for your users.",
+      ];
+  return send(
+    [to],
+    title,
+    `${lines.join("\n\n").replace(/<[^>]+>/g, "")}\n\nUpgrade your plan: ${billingUrl}`,
+    branded(title, lines, { text: u.level === 100 ? "Upgrade now" : "See plans", href: billingUrl }),
+    "support@devsquarelabs.com"
+  );
+}
+
 export function sendPlanChangedEmail(to: string, planName: string, upgrade: boolean) {
   const consoleUrl = `${website()}/#/portal`;
   const title = upgrade ? `You're now on the ${planName} plan` : `Your plan is now ${planName}`;

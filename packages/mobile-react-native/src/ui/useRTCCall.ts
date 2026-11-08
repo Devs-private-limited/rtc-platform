@@ -95,6 +95,7 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
   const callRef = useRef<RTCCall | null>(null);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLoud = useRef(0);
+  const endedAt = useRef(0);
   const onEndedRef = useRef(options.onCallEnded);
   onEndedRef.current = options.onCallEnded;
 
@@ -111,6 +112,7 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
       const c = callRef.current;
       if (!c || c.phase === "ended") return;
       const ended: RTCCall = { ...c, phase: "ended", endReason: reason, error: error ?? c.error };
+      endedAt.current = Date.now();
       update(ended);
       setSharingScreen(false);
       setRemoteScreenUserId(null);
@@ -176,8 +178,19 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
       }),
       client.on("error", (p: any) => {
         const c = callRef.current;
-        if (!c || c.phase === "ended") return;
         const message = p?.message || "Something went wrong";
+        // The server refused our call (minutes used up, not in the plan): the SDK reports it as
+        // "rejected" first, so show it as failed with the reason instead of "Call declined".
+        if (c && c.phase === "ended" && c.endReason === "declined" && c.direction === "outgoing" && Date.now() - endedAt.current < 2000) {
+          const failed: RTCCall = { ...c, endReason: "failed", error: message };
+          update(failed);
+          if (clearTimer.current) clearTimeout(clearTimer.current);
+          clearTimer.current = setTimeout(() => {
+            if (callRef.current === failed) update(null);
+          }, Math.max(endedScreenMs, 3000)); // long enough to read the reason
+          return;
+        }
+        if (!c || c.phase === "ended") return;
         // callUser failed before the SDK reported "ringing" (no room joined, already in a call, plan limit).
         if (c.direction === "outgoing" && !c.callId) finish("failed", message);
         else update({ ...c, error: message });
@@ -199,7 +212,7 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
       }),
     ];
     return () => offs.forEach((off) => off());
-  }, [client, finish, update]);
+  }, [client, endedScreenMs, finish, update]);
 
   // Vibrate while an incoming call rings.
   const ringing = call?.direction === "incoming" && call.phase === "ringing";

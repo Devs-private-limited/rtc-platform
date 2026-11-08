@@ -6,6 +6,7 @@ import { requireRoomUser } from "../room-access.js";
 import { scopedRoles } from "../tenant-scope.js";
 import { checkAppFeature } from "../plan-features.js";
 import { callMediaRoomFor } from "../call-state.js";
+import { checkMinutes } from "../usage-limits.js";
 
 export async function registerMediaAuthorizeRoutes(app: FastifyInstance, deps: { jwtSecret: string; rooms: RoomStore; roomRoles: RoomRoleStore }) {
   app.post<{ Body: { roomId?: string; action?: string } }>("/v1/media/authorize", async (req, reply) => {
@@ -30,6 +31,12 @@ export async function registerMediaAuthorizeRoutes(app: FastifyInstance, deps: {
       const feature = action === "recording-start" ? "recording" : action === "cdn-start" ? "groupVideo" : action === "video" ? "video" : action === "screen" ? "screenShare" : "groupVoice";
       const result = await checkAppFeature(claims.appId, feature);
       if (!result.allowed) return reply.status(403).send({ error: result.message });
+      // Group voice/video: refuse new media when this month's minutes are used up. (1:1 calls were
+      // checked when they started ringing, so an accepted call is never refused here.)
+      if ((action === "audio" || action === "video") && !callMediaRoomFor(claims.appId, claims.userId, roomId)) {
+        const minutes = await checkMinutes(claims.appId, action === "video" ? "video" : "voice");
+        if (!minutes.allowed) return reply.status(403).send({ error: minutes.message, code: "minutes_exhausted" });
+      }
     }
     return { allowed: true };
   });
