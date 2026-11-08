@@ -124,7 +124,7 @@ What you get:
 </View>
 ```
 
-**Group calls** (Pro plan or higher) in the room you joined:
+**Group calls** (group voice needs Starter, group video needs Pro) in the room you joined:
 
 ```tsx
 import { useRTCGroupCall, GroupCallScreen } from 'rtcexpress-react-native';
