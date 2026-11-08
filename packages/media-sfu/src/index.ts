@@ -1,7 +1,7 @@
 import "dotenv/config";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { SfuManager } from "./sfu.js";
+import { SfuManager, CameraLimitError } from "./sfu.js";
 import { loadSfuEnv } from "./env.js";
 import { createAuthHook, type AuthenticatedRequest } from "./auth.js";
 import { CloudRecordingManager } from "./cloud-recording.js";
@@ -88,15 +88,20 @@ app.post<{
   if (!peerId || (kind !== "audio" && kind !== "video") || !req.body?.rtpParameters) {
     return reply.status(400).send({ error: "peerId, kind=audio|video, rtpParameters required" });
   }
-  const producer = await sfu.produce(
-    req.params.roomId,
-    peerId,
-    req.params.transportId,
-    kind,
-    req.body.rtpParameters as never,
-    req.body.source === "screen" || req.body.source === "camera" || req.body.source === "microphone" ? req.body.source : undefined
-  );
-  return { producerId: producer.id };
+  try {
+    const producer = await sfu.produce(
+      req.params.roomId,
+      peerId,
+      req.params.transportId,
+      kind,
+      req.body.rtpParameters as never,
+      req.body.source === "screen" || req.body.source === "camera" || req.body.source === "microphone" ? req.body.source : undefined
+    );
+    return { producerId: producer.id };
+  } catch (err) {
+    if (err instanceof CameraLimitError) return reply.status(403).send({ error: err.message, code: "camera_limit" });
+    throw err;
+  }
 });
 
 app.post<{ Params: { roomId: string; producerId: string }; Body: { peerId?: string } }>(

@@ -166,7 +166,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
                 onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
                 onAudioLevels = { levels -> listener?.onAudioLevels(levels) },
-                onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) }
+                onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) },
+                onWarning = { message -> listener?.onError(message) }
             )
         }
         try {
@@ -212,7 +213,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
                 onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
                 onAudioLevels = { levels -> listener?.onAudioLevels(levels) },
-                onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) }
+                onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) },
+                onWarning = { message -> listener?.onError(message) }
             )
         }
         try {
@@ -584,7 +586,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
                 onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
                 onAudioLevels = { levels -> listener?.onAudioLevels(levels) },
-                onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) }
+                onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) },
+                onWarning = { message -> listener?.onError(message) }
             )
         }
         val sfuRoomId = "${call.roomId}-call-${call.callId}"

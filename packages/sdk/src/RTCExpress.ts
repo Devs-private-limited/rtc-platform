@@ -340,6 +340,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
         this.remoteStreams.set(info.producerId, info.stream);
         this.emit("remoteTrack", info);
       });
+      this.sfu.onWarning = (message, code) => this.emit("error", { message, ...(code ? { code } : {}) });
       this.sfu.onRemoteTrackEnded = (info) => {
         this.remoteStreams.delete(info.producerId);
         this.emit("remoteTrackEnded", info);

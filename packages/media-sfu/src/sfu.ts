@@ -10,6 +10,39 @@ import type {
   Worker,
 } from "mediasoup/types";
 
+/** Most cameras on at once in one room (group video). */
+export const MAX_CAMERAS = Math.max(2, Number(process.env.SFU_MAX_CAMERAS) || 8);
+/** Extra sending room for a shared screen (text must stay readable). */
+export const SCREEN_BITRATE = 1_200_000;
+const AUDIO_BITRATE = 100_000;
+/** How long a peer may stay unreachable before its media is removed. */
+const DISCONNECT_GRACE_MS = 30_000;
+
+/**
+ * Camera bitrate per sender by how many cameras are on: everyone receives every other camera, so
+ * bigger calls send smaller video (phones show small tiles anyway). Keeps group video affordable.
+ */
+export function cameraBitrate(cameras: number) {
+  if (cameras <= 2) return 1_000_000; // 1:1: about 720p
+  if (cameras <= 4) return 600_000; // about 480p/360p tiles
+  return 350_000; // 5-8 people: about 360p/240p tiles
+}
+
+/** Refused because the room already has the most cameras allowed. */
+export class CameraLimitError extends Error {
+  constructor(max: number) {
+    super(`This video call already has ${max} cameras on, the most allowed, so you joined without your camera. Leave and join again to turn it on after someone leaves.`);
+    this.name = "CameraLimitError";
+  }
+}
+
+/** Would one more camera from `peerId` go over the limit? (A peer replacing its own camera is fine.) */
+export function cameraLimitReached(cameraPeers: Iterable<string>, peerId: string, max = MAX_CAMERAS) {
+  const others = new Set(cameraPeers);
+  others.delete(peerId);
+  return others.size >= max;
+}
+
 export interface Peer {
   id: string;
   transports: Map<string, WebRtcTransport>;
@@ -129,7 +162,76 @@ export class SfuManager {
       preferUdp: true,
     });
     peer.transports.set(transport.id, transport);
+    // Someone left (closed the connection) or lost the network for good: remove their media, so
+    // the camera count and others' video quality follow who is really in the call.
+    let lost: ReturnType<typeof setTimeout> | null = null;
+    transport.on("dtlsstatechange", (state) => {
+      if (state === "closed" || state === "failed") this.dropTransport(roomId, peerId, transport.id);
+    });
+    transport.on("icestatechange", (state) => {
+      if (lost) clearTimeout(lost);
+      lost = null;
+      if (state === "disconnected") {
+        lost = setTimeout(() => {
+          if (transport.iceState === "disconnected") this.dropTransport(roomId, peerId, transport.id);
+        }, DISCONNECT_GRACE_MS);
+        lost.unref?.();
+      }
+    });
+    transport.observer.on("close", () => {
+      if (lost) clearTimeout(lost);
+    });
     return transport;
+  }
+
+  /** Close one transport (and everything on it); forget the peer when nothing is left. */
+  dropTransport(roomId: string, peerId: string, transportId: string) {
+    const room = this.getRoom(roomId);
+    const peer = room?.peers.get(peerId);
+    const transport = peer?.transports.get(transportId);
+    if (!room || !peer || !transport) return;
+    if (!transport.closed) transport.close();
+    peer.transports.delete(transportId);
+    for (const [id, producer] of peer.producers) if (producer.closed) peer.producers.delete(id);
+    for (const [id, consumer] of peer.consumers) if (consumer.closed) peer.consumers.delete(id);
+    if (peer.transports.size === 0) room.peers.delete(peerId);
+    this.applyBitrates(room);
+  }
+
+  /** Peers with a camera on right now. */
+  cameraPeers(room: SfuRoom) {
+    const ids: string[] = [];
+    for (const [peerId, peer] of room.peers) {
+      for (const producer of peer.producers.values()) {
+        const source = (producer.appData as { source?: string })?.source;
+        if (!producer.closed && producer.kind === "video" && source === "camera") {
+          ids.push(peerId);
+          break;
+        }
+      }
+    }
+    return ids;
+  }
+
+  /** Tell every sender how much it may send now (the browser/phone lowers its video to fit). */
+  applyBitrates(room: SfuRoom) {
+    const perCamera = cameraBitrate(this.cameraPeers(room).length);
+    for (const peer of room.peers.values()) {
+      for (const transport of peer.transports.values()) {
+        if (transport.closed) continue;
+        let camera = false;
+        let screen = false;
+        for (const producer of peer.producers.values()) {
+          const appData = producer.appData as { source?: string; transportId?: string };
+          if (producer.closed || appData.transportId !== transport.id || producer.kind !== "video") continue;
+          if (appData.source === "screen") screen = true;
+          else camera = true;
+        }
+        if (!camera && !screen) continue;
+        const max = AUDIO_BITRATE + (camera ? perCamera : 0) + (screen ? SCREEN_BITRATE : 0);
+        transport.setMaxIncomingBitrate(max).catch(() => {});
+      }
+    }
   }
 
   getTransport(roomId: string, peerId: string, transportId: string): Transport | null {
@@ -149,14 +251,23 @@ export class SfuManager {
   ) {
     const transport = this.getTransport(roomId, peerId, transportId) as WebRtcTransport | null;
     if (!transport) throw new Error("Transport not found");
+    const room = this.getRoom(roomId)!;
+    const finalSource = source || (kind === "audio" ? "microphone" : "camera");
+    if (kind === "video" && finalSource === "camera" && cameraLimitReached(this.cameraPeers(room), peerId)) {
+      throw new CameraLimitError(MAX_CAMERAS);
+    }
     const producer = await transport.produce({
       kind,
       rtpParameters,
-      appData: { source: source || (kind === "audio" ? "microphone" : "camera") },
+      appData: { source: finalSource, transportId },
     });
-    const room = this.getRoom(roomId)!;
     const peer = room.getOrCreatePeer(peerId);
     peer.producers.set(producer.id, producer);
+    producer.observer.on("close", () => {
+      peer.producers.delete(producer.id);
+      this.applyBitrates(room);
+    });
+    this.applyBitrates(room);
     return producer;
   }
 
@@ -187,6 +298,7 @@ export class SfuManager {
     });
     const peer = room.getOrCreatePeer(peerId);
     peer.consumers.set(consumer.id, consumer);
+    consumer.observer.on("close", () => peer.consumers.delete(consumer.id));
     return consumer;
   }
 

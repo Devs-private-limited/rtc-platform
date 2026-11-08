@@ -35,7 +35,9 @@ class SfuMediaEngine(
     /** Every 300 ms: how loud each person is (0.0-1.0), including this user. */
     private val onAudioLevels: (Map<String, Double>) -> Unit = {},
     /** A remote person started (true) or stopped (false) sharing their screen. */
-    private val onRemoteScreen: (String, Boolean) -> Unit = { _, _ -> }
+    private val onRemoteScreen: (String, Boolean) -> Unit = { _, _ -> },
+    /** Something did not work but the call goes on, e.g. the call already has the most cameras. */
+    private val onWarning: (String) -> Unit = {}
 ) {
     private val http = OkHttpClient()
     // Shared with P2P calls and CallVideoView: video frames can only be drawn by views
@@ -485,6 +487,12 @@ class SfuMediaEngine(
             pendingSource = "camera"
             try {
                 videoTrack?.let { camProducer = send.produce({ }, it, null, null, null) }
+            } catch (e: Exception) {
+                // The call already has the most cameras: stay in with audio only and say why.
+                val message = generateSequence<Throwable>(e) { it.cause }.mapNotNull { it.message }.firstOrNull { it.contains("cameras on") }
+                    ?: throw e
+                stopCamera()
+                onWarning(message.substringAfter("(403): "))
             } finally {
                 pendingSource = "microphone"
             }
@@ -547,6 +555,19 @@ class SfuMediaEngine(
             onRemoteVideo(track)
         }
         if (firstForUser) onParticipant(fromUserId, true)
+    }
+
+    private fun stopCamera() {
+        CallVideoTracks.update(true, null)
+        runCatching { videoCapturer?.stopCapture() }
+        videoCapturer?.dispose()
+        videoCapturer = null
+        captureHelper?.dispose()
+        captureHelper = null
+        videoTrack?.dispose()
+        videoTrack = null
+        videoSource?.dispose()
+        videoSource = null
     }
 
     private fun startCamera() {

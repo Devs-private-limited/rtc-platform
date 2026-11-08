@@ -1,3 +1,8 @@
+## 0.1.3
+
+- Group video: when a call already has the most cameras (8), you join with audio only and get an error event saying why, instead of the join failing.
+- Video quality in group calls now follows the number of cameras (set by the media server), so bigger calls use less data.
+
 ## 0.1.2
 
 - Android: screen sharing in calls (`startScreenShare()` / `stopScreenShare()`, `screenShare` event, `RTCVideoView(screen: true)`), the same way as the web SDK. Needs a plan with screen sharing.

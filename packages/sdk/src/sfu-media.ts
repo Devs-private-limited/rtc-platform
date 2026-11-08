@@ -55,6 +55,8 @@ export class SfuMediaEngine {
   private joinOptions: MediaJoinOptions = {};
   /** Called when a remote person stops some media, e.g. their screen share. */
   onRemoteTrackEnded?: OnRemoteTrackEnded;
+  /** Something did not work but the call goes on, e.g. the call already has the most cameras. */
+  onWarning?: (message: string, code?: string) => void;
 
   constructor(
     private sfuUrl: string,
@@ -306,7 +308,13 @@ export class SfuMediaEngine {
             body: JSON.stringify({ peerId: this.userId, kind, rtpParameters, source: this.pendingProduceSource }),
           }
         );
-        const { producerId } = await produceRes.json();
+        const produced = (await produceRes.json().catch(() => ({}))) as { producerId?: string; error?: string; code?: string };
+        if (!produceRes.ok || !produced.producerId) {
+          const err = new Error(produced.error || `Could not send media (${produceRes.status})`) as Error & { code?: string };
+          err.code = produced.code;
+          throw err;
+        }
+        const producerId = produced.producerId;
         callback({ id: producerId });
 
         const source = this.pendingProduceSource;
@@ -386,11 +394,19 @@ export class SfuMediaEngine {
       const track = this.localStream.getVideoTracks()[0];
       if (track) {
         this.pendingProduceSource = "camera";
-        const producer = await this.sendTransport!.produce(
-          this.videoProduceOptions(track, preferH264)
-        );
-        this.producers.set("camera", producer);
-        this.producerMeta.set(producer.id, { source: "camera", kind: "video" });
+        try {
+          const producer = await this.sendTransport!.produce(
+            this.videoProduceOptions(track, preferH264)
+          );
+          this.producers.set("camera", producer);
+          this.producerMeta.set(producer.id, { source: "camera", kind: "video" });
+        } catch (err) {
+          // The call already has the most cameras: join with audio only and say why.
+          if ((err as { code?: string }).code !== "camera_limit") throw err;
+          track.stop();
+          this.localStream.removeTrack(track);
+          this.onWarning?.((err as Error).message, "camera_limit");
+        }
       }
     }
   }

@@ -81,6 +81,10 @@ export function GroupCallScreen({ controller, userId, title, displayName, theme:
         <Text style={[styles.status, { color: theme.mutedText }]}>{status}</Text>
       </View>
 
+      {!!controller.error && (
+        <Text style={[styles.status, { color: theme.mutedText, textAlign: "center", paddingHorizontal: 24 }]}>{controller.error}</Text>
+      )}
+
       {sharingScreen && (
         <View style={[styles.sharingPill, { backgroundColor: theme.hangUp }]}>
           <Text style={styles.sharingText}>● {t.youAreSharing}</Text>

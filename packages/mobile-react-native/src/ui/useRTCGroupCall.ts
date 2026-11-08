@@ -127,6 +127,12 @@ export function useRTCGroupCall(
       client.on("error", (p: any) => {
         if (!ref.current) return;
         const message: string = p?.message || "Group call error";
+        if (/cameras on/i.test(message)) {
+          // The call already has the most cameras: you're in with audio only.
+          setError(message);
+          setCameraOff(true);
+          return;
+        }
         if (/not included in|Could not join group|Call could not start/i.test(message)) {
           setError(message);
           leave();
