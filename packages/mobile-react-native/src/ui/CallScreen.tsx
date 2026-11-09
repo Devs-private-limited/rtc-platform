@@ -58,10 +58,10 @@ export function CallScreen({ controller, displayName, theme: themeIn, labels: la
           {call.video && (
             <View style={styles.strip}>
               <View style={styles.stripTile}>
-                {peerCameraOff ? <CallAvatar name={name} size={40} theme={theme} /> : <RTCVideoView local={false} overlay style={styles.fill} />}
+                {peerCameraOff ? <CallAvatar name={name} size={40} theme={theme} /> : <RTCVideoView local={false} overlay style={StyleSheet.absoluteFill} />}
               </View>
               <View style={styles.stripTile}>
-                {cameraOff ? <CallAvatar name={t.you} size={40} theme={theme} /> : <RTCVideoView local overlay style={styles.fill} />}
+                {cameraOff ? <CallAvatar name={t.you} size={40} theme={theme} /> : <RTCVideoView local overlay style={StyleSheet.absoluteFill} />}
               </View>
             </View>
           )}
@@ -85,7 +85,8 @@ export function CallScreen({ controller, displayName, theme: themeIn, labels: la
           )}
           {showRemote && (
             <View style={styles.selfView}>
-              {cameraOff ? <CallAvatar name={t.you} size={48} theme={theme} /> : <RTCVideoView local style={styles.fill} />}
+              {/* absoluteFill, not flex: the tile centers its content, which gave the video 0 width (black self-view). */}
+              {cameraOff ? <CallAvatar name={t.you} size={48} theme={theme} /> : <RTCVideoView local style={StyleSheet.absoluteFill} />}
             </View>
           )}
         </View>
