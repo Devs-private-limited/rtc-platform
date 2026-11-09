@@ -18,7 +18,8 @@ export interface MediaJoinOptions {
   video?: boolean;
   /** Subscribe only — no local publish (live broadcast audience). */
   recvOnly?: boolean;
-  /** Prefer H.264 when the SFU router supports it (default true). */
+  /** Prefer H.264 when the SFU router supports it (default false: VP8 decodes on every phone; H.264
+   *  hardware decoders on many Android phones show a frozen or black picture with simulcast). */
   preferH264?: boolean;
 }
 
@@ -163,12 +164,18 @@ export class SfuMediaEngine {
     if (!this.sendTransport || !this.roomId) throw new Error("Not in SFU room");
     if (this.screenStream) await this.stopScreenShare();
 
-    this.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    // Cap size/frame rate: a full laptop screen is large, and text stays readable at 1080p/15 fps.
+    this.screenStream = await navigator.mediaDevices.getDisplayMedia({
+      video: { width: { max: 1920 }, height: { max: 1080 }, frameRate: { max: 15 } },
+      audio: false,
+    });
     const track = this.screenStream.getVideoTracks()[0];
     track.onended = () => void this.stopScreenShare();
 
     this.pendingProduceSource = "screen";
-    const preferH264 = true;
+    // VP8 for screens: the SFU's H.264 profile (42e01f, level 3.1) is meant for up to 720p, and many
+    // Android hardware decoders show black for a 1080p screen in it. VP8 decodes at any size.
+    const preferH264 = false;
     const producer = await this.sendTransport.produce(
       this.videoProduceOptions(track, preferH264)
     );
@@ -273,7 +280,10 @@ export class SfuMediaEngine {
       headers: this.apiHeaders(),
       body: JSON.stringify({ peerId: this.userId }),
     });
-    const transportInfo = await res.json();
+    const transportInfo = await res.json().catch(() => ({}));
+    if (!res.ok || !transportInfo.id) {
+      throw new Error(`Media server refused the call (${res.status}): ${transportInfo.error || "no transport"}`);
+    }
 
     this.sendTransport = this.device!.createSendTransport({
       id: transportInfo.id,
@@ -342,7 +352,10 @@ export class SfuMediaEngine {
       headers: this.apiHeaders(),
       body: JSON.stringify({ peerId: this.userId }),
     });
-    const transportInfo = await res.json();
+    const transportInfo = await res.json().catch(() => ({}));
+    if (!res.ok || !transportInfo.id) {
+      throw new Error(`Media server refused the call (${res.status}): ${transportInfo.error || "no transport"}`);
+    }
 
     this.recvTransport = this.device!.createRecvTransport({
       id: transportInfo.id,
@@ -374,7 +387,7 @@ export class SfuMediaEngine {
     options: MediaJoinOptions,
     media: { audio: boolean; video: boolean }
   ) {
-    const preferH264 = options.preferH264 !== false;
+    const preferH264 = options.preferH264 === true;
     this.localStream = await navigator.mediaDevices.getUserMedia({
       audio: media.audio,
       video: media.video ? videoConstraints(this.facingMode) : false,

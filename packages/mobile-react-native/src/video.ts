@@ -7,6 +7,8 @@ export type RTCVideoViewProps = ViewProps & {
   userId?: string;
   /** Show a shared screen instead of a camera: this userId's, or the newest one. */
   screen?: boolean;
+  /** Draw above other video, for small tiles over a big video (default: true for the self-view only). */
+  overlay?: boolean;
 };
 
 /** Native video renderer for the active call. Android only for now. */

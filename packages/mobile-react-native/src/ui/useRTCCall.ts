@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, Vibration } from "react-native";
+
+function stopVibration() {
+  try {
+    Vibration.cancel();
+  } catch {
+    /* no VIBRATE permission */
+  }
+}
 import type { RTCExpress } from "../index";
 import { requestCallPermissions } from "./permissions";
 import { isSpeaking } from "./theme";
@@ -19,6 +27,8 @@ export interface RTCCall {
   accepted: boolean;
   /** Time (ms) the call connected; use it for a call timer. */
   connectedAt?: number;
+  /** When the call was answered (the timer counts from here on both sides, so they match). */
+  answeredAt?: number;
   /** Set when phase is "ended". */
   endReason?: CallEndReason;
   /** Last error message for this call (permission denied, plan limit, network). */
@@ -32,6 +42,10 @@ export interface RTCCallController {
   cameraOff: boolean;
   /** The other person is talking right now (SFU calls on paid plans; always false in P2P calls). */
   peerSpeaking: boolean;
+  /** The other person muted their microphone. */
+  peerMuted: boolean;
+  /** The other person turned their camera off. */
+  peerCameraOff: boolean;
   /** The call screen is hidden and the app is usable; show <OngoingCallBar> to get back. */
   minimized: boolean;
   /** Hide the call screen but keep the call (Android back button does this too). */
@@ -89,6 +103,8 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [peerSpeaking, setPeerSpeaking] = useState(false);
+  const [peerMuted, setPeerMuted] = useState(false);
+  const [peerCameraOff, setPeerCameraOff] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [sharingScreen, setSharingScreen] = useState(false);
   const [remoteScreenUserId, setRemoteScreenUserId] = useState<string | null>(null);
@@ -111,6 +127,7 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
     (reason: CallEndReason, error?: string) => {
       const c = callRef.current;
       if (!c || c.phase === "ended") return;
+      stopVibration();
       const ended: RTCCall = { ...c, phase: "ended", endReason: reason, error: error ?? c.error };
       endedAt.current = Date.now();
       update(ended);
@@ -119,6 +136,8 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
       setMuted(false);
       setCameraOff(false);
       setPeerSpeaking(false);
+      setPeerMuted(false);
+      setPeerCameraOff(false);
       onEndedRef.current?.(ended);
       if (clearTimer.current) clearTimeout(clearTimer.current);
       clearTimer.current = setTimeout(() => {
@@ -173,7 +192,8 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
           callId: c.callId || p?.callId,
           roomId: c.roomId || p?.roomId,
           phase,
-          connectedAt: c.connectedAt || (live ? Date.now() : undefined),
+          answeredAt: c.answeredAt || (state === "connecting" || live ? Date.now() : undefined),
+          connectedAt: c.connectedAt || (live ? c.answeredAt || Date.now() : undefined),
         });
       }),
       client.on("error", (p: any) => {
@@ -204,6 +224,12 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
         setPeerSpeaking((cur) => (cur === talking ? cur : talking));
       }),
       client.on("disconnected", () => finish(callRef.current?.connectedAt ? "ended" : "failed", "Connection lost")),
+      client.on("remoteMediaState", (p: any) => {
+        const c = callRef.current;
+        if (!c || c.phase === "ended" || p?.userId !== c.peerUserId) return;
+        setPeerMuted(!!p.audioMuted);
+        setPeerCameraOff(!!p.videoOff);
+      }),
       client.on("screenShare", (p: any) => {
         if (!callRef.current || callRef.current.phase === "ended") return;
         if (p?.local) setSharingScreen(!!p.active);
@@ -256,7 +282,8 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
       finish("failed", "Microphone permission is needed to answer.");
       return false;
     }
-    update({ ...c, accepted: true, phase: "connecting" });
+    stopVibration(); // stop at once on answer, not only when React re-renders
+    update({ ...c, accepted: true, phase: "connecting", answeredAt: Date.now() });
     client.acceptCall();
     return true;
   }, [askPermissions, client, finish, update]);
@@ -318,5 +345,5 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
 
   const canShareScreen = Platform.OS === "android";
 
-  return { call, muted, cameraOff, peerSpeaking, minimized, minimize, restore, sharingScreen, remoteScreenUserId, toggleScreenShare, canShareScreen, startCall, accept, decline, hangUp, toggleMute, toggleCamera, switchCamera, dismiss };
+  return { call, muted, cameraOff, peerSpeaking, peerMuted, peerCameraOff, minimized, minimize, restore, sharingScreen, remoteScreenUserId, toggleScreenShare, canShareScreen, startCall, accept, decline, hangUp, toggleMute, toggleCamera, switchCamera, dismiss };
 }

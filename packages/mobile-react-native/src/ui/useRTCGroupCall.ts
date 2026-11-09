@@ -18,6 +18,10 @@ export interface RTCGroupCallController {
   groupCall: RTCGroupCall | null;
   /** User IDs talking right now (you included), from the server's audio levels. */
   speaking: string[];
+  /** Others who muted their microphone. */
+  mutedPeople: string[];
+  /** Others who turned their camera off. */
+  cameraOffPeople: string[];
   muted: boolean;
   cameraOff: boolean;
   /** Last error, e.g. "Group video calls are not included in your current plan". Cleared on the next join. */
@@ -58,6 +62,8 @@ export function useRTCGroupCall(
   const [minimized, setMinimized] = useState(false);
   const [sharingScreen, setSharingScreen] = useState(false);
   const [screenSharers, setScreenSharers] = useState<string[]>([]);
+  const [mutedPeople, setMutedPeople] = useState<string[]>([]);
+  const [cameraOffPeople, setCameraOffPeople] = useState<string[]>([]);
   const ref = useRef<RTCGroupCall | null>(null);
   const lastLoud = useRef<Record<string, number>>({});
 
@@ -72,6 +78,8 @@ export function useRTCGroupCall(
     setMinimized(false);
     setSharingScreen(false);
     setScreenSharers([]);
+    setMutedPeople([]);
+    setCameraOffPeople([]);
     setSpeaking([]);
     setMuted(false);
     setCameraOff(false);
@@ -107,7 +115,15 @@ export function useRTCGroupCall(
         else {
           update((g) => (g ? { ...g, participants: g.participants.filter((u) => u !== p.userId) } : g));
           setScreenSharers((cur) => cur.filter((u) => u !== p.userId));
+          setMutedPeople((cur) => cur.filter((u) => u !== p.userId));
+          setCameraOffPeople((cur) => cur.filter((u) => u !== p.userId));
         }
+      }),
+      client.on("remoteMediaState", (p: any) => {
+        if (!ref.current || !p?.userId || p.userId === userId) return;
+        const set = (on: boolean) => (cur: string[]) => [...cur.filter((u) => u !== p.userId), ...(on ? [p.userId as string] : [])];
+        setMutedPeople(set(!!p.audioMuted));
+        setCameraOffPeople(set(!!p.videoOff));
       }),
       client.on("screenShare", (p: any) => {
         if (!ref.current) return;
@@ -197,5 +213,5 @@ export function useRTCGroupCall(
 
   const canShareScreen = Platform.OS === "android";
 
-  return { groupCall, speaking, muted, cameraOff, error, minimized, minimize, restore, sharingScreen, screenSharers, toggleScreenShare, canShareScreen, join, leave, toggleMute, toggleCamera, switchCamera };
+  return { groupCall, speaking, mutedPeople, cameraOffPeople, muted, cameraOff, error, minimized, minimize, restore, sharingScreen, screenSharers, toggleScreenShare, canShareScreen, join, leave, toggleMute, toggleCamera, switchCamera };
 }

@@ -1,6 +1,7 @@
 import type { WebSocket } from "ws";
 import { mayJoinRoom } from "./private-rooms.js";
 import type {
+  MediaStatePayload,
   CallInvitePayload,
   CallPeerPayload,
   CallQualityReportPayload,
@@ -531,6 +532,28 @@ export async function handleClientMessage(ctx: HandlerContext) {
           byUserId: userId,
         },
       });
+      break;
+    }
+
+    case "media_state": {
+      // "I muted / turned my camera off": tell everyone else in the room so they can show it.
+      // Clients send it on every change and again when someone new joins the call (no state here).
+      const payload = message.payload as MediaStatePayload;
+      if (!payload.roomId || typeof payload.audioMuted !== "boolean" || typeof payload.videoOff !== "boolean") {
+        ctx.send(ws, { type: "error", payload: { message: "Invalid media_state payload" } });
+        return;
+      }
+      if (!(await ctx.rooms.isMember(payload.roomId, userId))) {
+        ctx.send(ws, { type: "error", payload: { message: "Join the room first" } });
+        return;
+      }
+      const members = (await ctx.rooms.getMembers(payload.roomId)).filter((id) => id !== userId);
+      for (const memberId of members) {
+        await ctx.sendToUser(memberId, {
+          type: "media_state",
+          payload: { roomId: payload.roomId, userId, audioMuted: payload.audioMuted, videoOff: payload.videoOff },
+        });
+      }
       break;
     }
 

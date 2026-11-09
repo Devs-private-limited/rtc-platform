@@ -109,6 +109,8 @@ export interface RTCEvents {
       byUserId: string;
     },
   ];
+  /** Someone else in the room/call muted their mic or turned their camera off (or back on). */
+  remoteMediaState: [{ roomId: string; userId: string; audioMuted: boolean; videoOff: boolean }];
   roomEnded: [{ roomId: string }];
   broadcastJoined: [{ roomId: string }];
   message: [import("@rtc/protocol").RoomMessagePayload];

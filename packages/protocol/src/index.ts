@@ -17,6 +17,7 @@ export type ClientMessageType =
   | "leave_media"
   | "kick_user"
   | "mute_remote"
+  | "media_state"
   | "end_room";
 
 export type ServerMessageType =
@@ -42,6 +43,7 @@ export type ServerMessageType =
   | "media_participant_left"
   | "user_kicked"
   | "user_muted"
+  | "media_state"
   | "cloud_recording_state"
   | "error";
 
@@ -103,6 +105,18 @@ export interface MuteRemotePayload {
   targetUserId: string;
   kind: "audio" | "video";
   muted: boolean;
+}
+
+/**
+ * "I muted my mic / turned my camera off" (client → server), relayed to everyone else in the room
+ * with userId added (server → client), so the others can show "muted" / "camera off".
+ */
+export interface MediaStatePayload {
+  roomId: string;
+  audioMuted: boolean;
+  videoOff: boolean;
+  /** Server → client only: who changed. */
+  userId?: string;
 }
 
 export interface EndRoomPayload {

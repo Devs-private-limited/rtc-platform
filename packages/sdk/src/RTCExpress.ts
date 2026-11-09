@@ -92,6 +92,8 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
   private reconnectBaseDelayMs = 1000;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private callMediaConnected = false;
+  /** Our own mic/camera state, sent to the others so they can show "muted" / "camera off". */
+  private localMediaState = { audioMuted: false, videoOff: false };
 
   private sessionSnapshot: {
     roomId: string;
@@ -432,6 +434,10 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
         break;
       case "media_participant_joined":
         this.emit("mediaParticipantJoined", message.payload as MediaParticipantPayload);
+        this.sendMediaState(true); // the newcomer should see that we're muted
+        break;
+      case "media_state":
+        this.emit("remoteMediaState", message.payload as { roomId: string; userId: string; audioMuted: boolean; videoOff: boolean });
         break;
       case "media_participant_left":
         this.emit("mediaParticipantLeft", message.payload as MediaParticipantPayload);
@@ -658,6 +664,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
       this.sfu = null;
     }
     this.inVoiceRoom = false;
+    if (!this.inVideoRoom) this.resetMediaState();
     if (!this.inVideoRoom) this.stopQualityMonitoring();
     // Still in the video room means still consuming group media — the billed
     // session stays open until they leave that too.
@@ -685,6 +692,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
     this.sfu?.destroy();
     this.sfu = null;
     this.inVideoRoom = false;
+    this.resetMediaState();
     this.stopQualityMonitoring();
     // Leaving video tears down the SFU transport, so any voice ends with it.
     this.inVoiceRoom = false;
@@ -769,6 +777,8 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
     } else {
       this.p2p?.muteMicrophone(muted);
     }
+    this.localMediaState.audioMuted = muted;
+    this.sendMediaState();
   }
 
   muteCamera(muted: boolean) {
@@ -777,6 +787,25 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
     } else {
       this.p2p?.muteCamera(muted);
     }
+    this.localMediaState.videoOff = muted;
+    this.sendMediaState();
+  }
+
+  /** Tell the others in the call/group our mic/camera state (onlyIfChanged: skip when all is on). */
+  private sendMediaState(onlyIfChanged = false) {
+    const roomId = this.activeCall?.roomId || (this.inVoiceRoom || this.inVideoRoom ? this.roomId : null);
+    if (!roomId) return;
+    const { audioMuted, videoOff } = this.localMediaState;
+    if (onlyIfChanged && !audioMuted && !videoOff) return;
+    try {
+      this.send({ type: "media_state", payload: { roomId, audioMuted, videoOff } });
+    } catch {
+      /* not connected: sent again when the call reconnects */
+    }
+  }
+
+  private resetMediaState() {
+    this.localMediaState = { audioMuted: false, videoOff: false };
   }
 
   async switchCamera() {
@@ -1044,6 +1073,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
         mediaMode: "sfu",
         callType,
       });
+      this.sendMediaState(true);
       this.startQualityMonitoring();
       return;
     }
@@ -1065,6 +1095,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
         mediaMode: "p2p",
         callType,
       });
+      this.sendMediaState(true);
       this.startQualityMonitoring();
     });
   }
@@ -1078,6 +1109,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
     if (!this.activeCall) return;
     this.stopQualityMonitoring();
     this.callMediaConnected = false;
+    this.resetMediaState(); // the next call starts with mic and camera on
     const { callId, peerUserId, roomId, callType } = this.activeCall;
     this.p2p?.destroy();
     this.p2p = null;

@@ -124,3 +124,24 @@ test("SFU call producers relay only between authorized connected participants", 
   await scoped.rooms.join("chat-room","alice"); await handleClientMessage(scoped);
   assert.equal(scoped.delivered.length,0);
 });
+
+test("media_state is relayed to the others in the room, never to outsiders", async () => {
+  const ctx = context({ type: "media_state", payload: { roomId: "dm_alice__bob", audioMuted: true, videoOff: false } });
+  await ctx.rooms.join("dm_alice__bob", "alice");
+  await ctx.rooms.join("dm_alice__bob", "bob");
+  await handleClientMessage(ctx);
+  assert.equal(ctx.delivered.length, 1);
+  assert.equal(ctx.delivered[0].type, "media_state");
+  assert.deepEqual(ctx.delivered[0].payload, { roomId: "dm_alice__bob", userId: "alice", audioMuted: true, videoOff: false });
+
+  const outsider = context({ type: "media_state", payload: { roomId: "dm_alice__bob", audioMuted: true, videoOff: true } }, "mallory");
+  await outsider.rooms.join("dm_alice__bob", "alice");
+  await handleClientMessage(outsider);
+  assert.equal(outsider.delivered.length, 0);
+  assert.equal(outsider.sent[0].type, "error");
+
+  const bad = context({ type: "media_state", payload: { roomId: "r", audioMuted: "yes" } });
+  await bad.rooms.join("r", "alice");
+  await handleClientMessage(bad);
+  assert.equal(bad.sent[0].type, "error");
+});

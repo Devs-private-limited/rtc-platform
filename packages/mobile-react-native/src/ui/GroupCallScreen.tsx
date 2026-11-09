@@ -48,18 +48,20 @@ export function GroupCallScreen({ controller, userId, title, displayName, theme:
 
   function tile(u: string, small: boolean) {
     const isMe = u === userId;
-    const talking = speaking.includes(u) && !(isMe && muted);
+    const theyMuted = isMe ? muted : controller.mutedPeople.includes(u);
+    const camOff = isMe ? cameraOff : controller.cameraOffPeople.includes(u);
+    const talking = speaking.includes(u) && !theyMuted;
     const size = small ? { width: 88, height: video ? 120 : 88 } : { width: twoColumns ? "47%" : "94%", aspectRatio: video ? 3 / 4 : 1 };
     return (
       <View key={u} style={[styles.tile, size as object, { borderColor: talking ? theme.speaking : "transparent" }]}>
-        {video && !(isMe && cameraOff) ? (
+        {video && !camOff ? (
           isMe ? <RTCVideoView local style={StyleSheet.absoluteFill} /> : <RTCVideoView userId={u} style={StyleSheet.absoluteFill} />
         ) : (
           <CallAvatar name={name(u)} size={small ? 44 : twoColumns ? 64 : 96} speaking={talking} theme={theme} />
         )}
         <Text style={[styles.tileName, small && styles.tileNameSmall, { color: theme.text }]} numberOfLines={1}>
           {name(u)}
-          {isMe && muted ? " 🔇" : ""}
+          {theyMuted ? " 🔇" : ""}
         </Text>
       </View>
     );

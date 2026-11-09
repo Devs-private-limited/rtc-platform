@@ -24,7 +24,7 @@ export interface CallScreenProps {
 export function CallScreen({ controller, displayName, theme: themeIn, labels: labelsIn, style }: CallScreenProps) {
   const theme = { ...defaultCallTheme, ...themeIn };
   const t = { ...defaultCallLabels, ...labelsIn };
-  const { call, muted, cameraOff, peerSpeaking, sharingScreen, remoteScreenUserId } = controller;
+  const { call, muted, cameraOff, peerSpeaking, peerMuted, peerCameraOff, sharingScreen, remoteScreenUserId } = controller;
   const now = useNow(call?.phase === "connected");
 
   // Android back button must not navigate the app behind an active call.
@@ -58,10 +58,10 @@ export function CallScreen({ controller, displayName, theme: themeIn, labels: la
           {call.video && (
             <View style={styles.strip}>
               <View style={styles.stripTile}>
-                <RTCVideoView local={false} style={styles.fill} />
+                {peerCameraOff ? <CallAvatar name={name} size={40} theme={theme} /> : <RTCVideoView local={false} overlay style={styles.fill} />}
               </View>
               <View style={styles.stripTile}>
-                {cameraOff ? <CallAvatar name={t.you} size={40} theme={theme} /> : <RTCVideoView local style={styles.fill} />}
+                {cameraOff ? <CallAvatar name={t.you} size={40} theme={theme} /> : <RTCVideoView local overlay style={styles.fill} />}
               </View>
             </View>
           )}
@@ -69,7 +69,20 @@ export function CallScreen({ controller, displayName, theme: themeIn, labels: la
       )}
       {showVideo && !showScreen && (
         <View style={StyleSheet.absoluteFill}>
-          {showRemote ? <RTCVideoView local={false} style={styles.fill} /> : !cameraOff && <RTCVideoView local style={styles.fill} />}
+          {/* Separate keys: Android can't move a live video surface between "self" and "remote" (z-order is
+              fixed when the surface is created), so reusing one view froze on the last self frame. */}
+          {showRemote ? (
+            peerCameraOff ? (
+              <View key="remote-off" style={[styles.fill, styles.cameraOffBox]}>
+                <CallAvatar name={name} size={112} theme={theme} />
+                <Text style={[styles.status, { color: theme.mutedText, marginTop: 12 }]}>{t.peerCameraOff}</Text>
+              </View>
+            ) : (
+              <RTCVideoView key="remote-main" local={false} style={styles.fill} />
+            )
+          ) : (
+            !cameraOff && <RTCVideoView key="self-main" local style={styles.fill} />
+          )}
           {showRemote && (
             <View style={styles.selfView}>
               {cameraOff ? <CallAvatar name={t.you} size={48} theme={theme} /> : <RTCVideoView local style={styles.fill} />}
@@ -83,7 +96,9 @@ export function CallScreen({ controller, displayName, theme: themeIn, labels: la
         {!showVideo && <CallAvatar name={name} size={112} speaking={peerSpeaking || ringingHere} theme={theme} />}
         <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
           {name}
+          {peerMuted && !ended ? ` 🔇` : ""}
         </Text>
+        {peerMuted && connected && <Text style={[styles.status, { color: theme.mutedText }]}>{`${name} · ${t.peerMuted}`}</Text>}
         <Text style={[styles.status, { color: theme.mutedText }]}>
           {showScreen ? `${t.isSharing} · ` : ""}
           {statusText(call, t, now, peerSpeaking)}
@@ -133,6 +148,7 @@ function statusText(call: RTCCall, t: RTCCallLabels, now: number, peerSpeaking: 
 const styles = StyleSheet.create({
   root: { zIndex: 1000, elevation: 1000, justifyContent: "space-between" },
   fill: { flex: 1 },
+  cameraOffBox: { alignItems: "center", justifyContent: "center", backgroundColor: "#111b19" },
   selfView: { position: "absolute", right: 16, top: 48, width: 104, height: 150, borderRadius: 12, overflow: "hidden", backgroundColor: "#000", alignItems: "center", justifyContent: "center" },
   top: { alignItems: "center", paddingTop: 96, paddingHorizontal: 24 },
   topOverVideo: { paddingTop: 40, alignItems: "flex-start", paddingLeft: 68, paddingRight: 132, paddingBottom: 8 },

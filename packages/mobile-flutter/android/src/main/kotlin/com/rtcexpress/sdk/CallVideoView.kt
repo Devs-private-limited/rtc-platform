@@ -71,9 +71,19 @@ class CallVideoView(context: Context) : SurfaceViewRenderer(context) {
         set(value) {
             field = value
             setMirror(value)
-            setZOrderMediaOverlay(value)
+            if (!isAttachedToWindow) setZOrderMediaOverlay(onTop)
             if (isAttachedToWindow) CallVideoTracks.register(this)
         }
+    /**
+     * Draw above other video (small tiles over a big video). Default: the self-view is on top.
+     * Android fixes this when the surface is created, so set it before the view is shown.
+     */
+    var overlay: Boolean? = null
+        set(value) {
+            field = value
+            if (!isAttachedToWindow) setZOrderMediaOverlay(onTop)
+        }
+    private val onTop get() = overlay ?: local
     /** Group video: show this person's camera instead of the newest remote one. */
     var userId: String? = null
         set(value) {
@@ -90,19 +100,21 @@ class CallVideoView(context: Context) : SurfaceViewRenderer(context) {
     private var ready = false
     fun bind(next: VideoTrack?) {
         if (track === next) return
-        track?.removeSink(this)
+        // The track may already be disposed (the other person stopped sharing and the consumer was
+        // closed first): removeSink would throw on the main thread and crash the app (= call ends).
+        track?.let { old -> runCatching { old.removeSink(this) } }
         track = next
-        next?.addSink(this)
+        if (next != null && runCatching { next.addSink(this) }.isFailure) track = null
         if (next == null && ready) clearImage()
     }
     override fun onAttachedToWindow() {
+        setZOrderMediaOverlay(onTop) // must happen before the surface is created
         super.onAttachedToWindow()
         WebRtcPeerFactory.warmUp(context)
         init(WebRtcPeerFactory.egl().eglBaseContext, null)
         setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
         ready = true
         setMirror(local)
-        setZOrderMediaOverlay(local)
         CallVideoTracks.register(this)
     }
     override fun onDetachedFromWindow() {

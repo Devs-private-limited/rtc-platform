@@ -32,6 +32,8 @@ class SignalingClient(
         fun onSfuProducerClosed(payload: JSONObject) {}
         /** Someone joined or left group voice/video in a room this user is in. */
         fun onMediaParticipant(payload: JSONObject, joined: Boolean) {}
+        /** Someone else muted their mic / turned their camera off (or back on). */
+        fun onMediaState(payload: JSONObject) {}
         fun onError(message: String, code: String? = null)
     }
 
@@ -127,6 +129,7 @@ class SignalingClient(
             "sfu_producer_closed" -> listener?.onSfuProducerClosed(payload)
             "media_participant_joined" -> listener?.onMediaParticipant(payload, true)
             "media_participant_left" -> listener?.onMediaParticipant(payload, false)
+            "media_state" -> listener?.onMediaState(payload)
             "error" -> listener?.onError(
                 payload.optString("message", "Unknown error"),
                 payload.optString("code").ifBlank { null }

@@ -14,6 +14,9 @@ object WebRtcPeerFactory {
     @Volatile
     private var nativesLoaded = false
 
+    /** The library that holds WebRTC's native code (differs by WebRTC build). */
+    private var nativeLibName = "jingle_peerconnection_so"
+
     private var eglBase: EglBase? = null
     private var factory: PeerConnectionFactory? = null
 
@@ -32,11 +35,14 @@ object WebRtcPeerFactory {
         val names = listOf(
             "jingle_peerconnection_so",
             "googlewebrtc",
+            // io.github.haiyangwu:mediasoup-client bundles WebRTC (org.webrtc JNI) in this library.
+            "mediasoupclient_so",
         )
         var loaded = false
         for (name in names) {
             try {
                 System.loadLibrary(name)
+                nativeLibName = name
                 loaded = true
                 break
             } catch (_: UnsatisfiedLinkError) {
@@ -59,6 +65,7 @@ object WebRtcPeerFactory {
         if (!initialized) {
             PeerConnectionFactory.initialize(
                 PeerConnectionFactory.InitializationOptions.builder(app)
+                    .setNativeLibraryName(nativeLibName)
                     .createInitializationOptions()
             )
             initialized = true

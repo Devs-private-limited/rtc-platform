@@ -62,6 +62,8 @@ export type RTCEventName =
   | "audioLevels"
   /** { userId, active, local, cancelled? } when someone (or this phone: local=true) starts/stops sharing their screen. */
   | "screenShare"
+  /** { roomId, userId, audioMuted, videoOff }: someone else muted / turned their camera off (or back on). */
+  | "remoteMediaState"
   | "diagnostics"
   | "error";
 

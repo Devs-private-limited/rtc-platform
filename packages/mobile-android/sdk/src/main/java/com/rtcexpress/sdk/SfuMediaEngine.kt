@@ -154,10 +154,11 @@ class SfuMediaEngine(
     /** Someone left the group call: stop their audio/video right away. */
     fun removeUser(remoteUserId: String) {
         var hadScreen = false
+        val removed = mutableListOf<Consumer>()
         val closed = synchronized(lock) {
             val ids = consumerUsers.filterValues { it == remoteUserId }.keys.toList()
             ids.forEach { id ->
-                runCatching { consumers.remove(id)?.close() }
+                consumers.remove(id)?.let { removed.add(it) }
                 consumerUsers.remove(id)
                 if (screenConsumers.remove(id)) hadScreen = true
             }
@@ -168,6 +169,7 @@ class SfuMediaEngine(
             CallVideoTracks.updateScreen(remoteUserId, null)
             onRemoteScreen(remoteUserId, false)
         }
+        closeAfterViews(removed)
         if (closed) onParticipant(remoteUserId, false)
     }
 
@@ -230,16 +232,28 @@ class SfuMediaEngine(
         val producerId = payload.optString("producerId")
         var user: String? = null
         var wasScreen = false
-        synchronized(lock) {
-            val consumer = consumers.remove(producerId) ?: return
-            runCatching { consumer.close() }
+        val consumer = synchronized(lock) {
+            val c = consumers.remove(producerId) ?: return
             user = consumerUsers.remove(producerId)
             wasScreen = screenConsumers.remove(producerId)
+            c
         }
         val who = user ?: payload.optString("fromUserId")
         if (wasScreen && who.isNotBlank()) {
             CallVideoTracks.updateScreen(who, null)
             onRemoteScreen(who, false)
+        }
+        closeAfterViews(listOf(consumer))
+    }
+
+    /**
+     * Video views drop a track on the main thread; closing the consumer first disposed the track
+     * under a view that still used it (crash = call ended). Queue the close behind the view update.
+     */
+    private fun closeAfterViews(list: List<Consumer>) {
+        if (list.isEmpty()) return
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            list.forEach { runCatching { it.close() } }
         }
     }
 
@@ -535,7 +549,8 @@ class SfuMediaEngine(
             producerId,
             res.getString("kind"),
             res.getJSONObject("rtpParameters").toString(),
-            ""
+            // appData must be valid JSON: libmediasoupclient parses it ("" throws a JSON parse error).
+            "{}"
         )
         val firstForUser = synchronized(lock) {
             val first = fromUserId.isNotBlank() && !consumerUsers.containsValue(fromUserId)

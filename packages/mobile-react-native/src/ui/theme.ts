@@ -56,6 +56,10 @@ export interface RTCCallLabels {
   stopSharing: string;
   youAreSharing: string;
   isSharing: string;
+  /** Shown next to someone who muted their microphone. */
+  peerMuted: string;
+  /** Shown instead of someone's video when they turned their camera off. */
+  peerCameraOff: string;
 }
 
 export const defaultCallLabels: RTCCallLabels = {
@@ -89,6 +93,8 @@ export const defaultCallLabels: RTCCallLabels = {
   stopSharing: "Stop share",
   youAreSharing: "You're sharing your screen",
   isSharing: "is sharing their screen",
+  peerMuted: "Muted",
+  peerCameraOff: "Camera off",
 };
 
 /** Audio level (0..1) above which someone counts as speaking. */

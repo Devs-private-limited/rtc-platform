@@ -19,6 +19,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         fun onAudioLevels(levels: Map<String, Double>) {}
         /** [userId] started (true) or stopped (false) sharing their screen. Your own userId = this phone. */
         fun onScreenShare(userId: String, active: Boolean) {}
+        /** [userId] (someone else in the call or group) muted their mic / turned their camera off, or back on. */
+        fun onRemoteMediaState(roomId: String, userId: String, audioMuted: Boolean, videoOff: Boolean) {}
         fun onVoiceRoomJoined(roomId: String) {}
         fun onVoiceRoomLeft(roomId: String) {}
         fun onVideoRoomJoined(roomId: String) {}
@@ -64,6 +66,9 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var signalingReady = false
     private var pendingJoinRoomId: String? = null
+    // Our own mic/camera state, sent to the others so they can show "muted" / "camera off".
+    @Volatile private var localAudioMuted = false
+    @Volatile private var localVideoOff = false
 
     private data class ActiveCall(
         val callId: String,
@@ -192,6 +197,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
             sfu = null
         }
         inVoiceRoom = false
+        if (activeCall == null && !inVideoRoom) resetMediaState()
         stopOngoingIfIdle()
         if (room != null && !inVideoRoom) {
             signaling.send("leave_media", JSONObject().put("roomId", room).put("kind", "voice"))
@@ -239,6 +245,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         sfu = null
         inVideoRoom = false
         inVoiceRoom = false
+        if (activeCall == null) resetMediaState()
         stopOngoingIfIdle()
         if (room != null) {
             signaling.send("leave_media", JSONObject().put("roomId", room).put("kind", "video"))
@@ -320,10 +327,38 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
 
     fun muteMicrophone(muted: Boolean) {
         sfu?.muteMicrophone(muted) ?: p2p?.muteMicrophone(muted)
+        localAudioMuted = muted
+        sendMediaState()
     }
 
     fun muteCamera(muted: Boolean) {
         sfu?.muteCamera(muted) ?: p2p?.muteCamera(muted)
+        localVideoOff = muted
+        sendMediaState()
+    }
+
+    /** Tell the others in the call/group our mic/camera state ([onlyIfChanged]: skip when all is on). */
+    private fun sendMediaState(onlyIfChanged: Boolean = false) {
+        val room = activeCall?.roomId ?: (if (inVoiceRoom || inVideoRoom) roomId else null) ?: return
+        if (onlyIfChanged && !localAudioMuted && !localVideoOff) return
+        runCatching {
+            signaling.send(
+                "media_state",
+                JSONObject().put("roomId", room).put("audioMuted", localAudioMuted).put("videoOff", localVideoOff)
+            )
+        }
+    }
+
+    private fun resetMediaState() {
+        localAudioMuted = false
+        localVideoOff = false
+    }
+
+    override fun onMediaState(payload: JSONObject) {
+        val room = payload.optString("roomId")
+        val who = payload.optString("userId")
+        if (room.isBlank() || who.isBlank() || who == userId) return
+        listener?.onRemoteMediaState(room, who, payload.optBoolean("audioMuted"), payload.optBoolean("videoOff"))
     }
 
     fun switchCamera() {
@@ -536,6 +571,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         if (room.isBlank() || who.isBlank() || who == userId) return
         if (!joined) sfu?.removeUser(who)
         listener?.onMediaParticipant(room, who, joined)
+        if (joined) sendMediaState(onlyIfChanged = true) // the newcomer should see that we're muted
     }
 
     override fun onError(message: String, code: String?) {
@@ -644,6 +680,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
 
     private fun emitCallState(state: String, peerUserId: String, roomId: String, callId: String, callType: String) {
         listener?.onCallState(CallStateUpdate(callId, state, peerUserId, roomId, callType))
+        if (state == "connected") sendMediaState(onlyIfChanged = true)
     }
 
     private fun cleanupCall(state: String) {
@@ -657,6 +694,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         p2p?.destroy()
         p2p = null
         activeCall = null
+        if (!inVoiceRoom && !inVideoRoom) resetMediaState() // the next call starts with mic and camera on
         stopOngoingIfIdle()
     }
 
