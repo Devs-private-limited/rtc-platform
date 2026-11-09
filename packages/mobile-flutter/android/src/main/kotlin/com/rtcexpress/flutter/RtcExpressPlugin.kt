@@ -61,6 +61,8 @@ class RtcExpressPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, RTCExpr
 
     override fun onScreenShare(userId: String, active: Boolean) =
         emit("screenShare", mapOf("userId" to userId, "active" to active, "local" to (userId == myUserId)))
+    override fun onRemoteMediaState(roomId: String, userId: String, audioMuted: Boolean, videoOff: Boolean) =
+        emit("remoteMediaState", mapOf("roomId" to roomId, "userId" to userId, "audioMuted" to audioMuted, "videoOff" to videoOff))
     private var rtc: RTCExpress? = null
     private var appContext: Context? = null
 

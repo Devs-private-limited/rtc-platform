@@ -84,7 +84,7 @@ rtc.leaveVideoRoom();
 rtc.destroy();
 ```
 
-Events: `connected`, `disconnected`, `roomJoined`, `message`, `callInvite`, `callState`, `remoteVideo`, `groupMedia`, `mediaParticipant` (`{ roomId, userId, joined }`), `audioLevels` (`{ [userId]: 0..1 }`, highlight who is speaking), `diagnostics`, `error`.
+Events: `connected`, `disconnected`, `roomJoined`, `message`, `callInvite`, `callState`, `remoteVideo`, `groupMedia`, `mediaParticipant` (`{ roomId, userId, joined }`), `audioLevels` (`{ [userId]: 0..1 }`, highlight who is speaking), `remoteMediaState` (`{ roomId, userId, audioMuted, videoOff }`: someone else muted / turned their camera off; the call screens show it, and `useRTCCall` gives `peerMuted` / `peerCameraOff`), `diagnostics`, `error`.
 
 ## Ready-made call screens (UI kit)
 

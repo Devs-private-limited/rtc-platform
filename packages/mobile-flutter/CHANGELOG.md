@@ -1,3 +1,9 @@
+## 0.1.4
+
+- New `remoteMediaState` event (`{roomId, userId, audioMuted, videoOff}`): show "muted" / "camera off" for the other people in a call or group. Your own `muteMicrophone` / `muteCamera` are sent to them automatically.
+- Android: fixed "WebRTC native library missing" on P2P calls, a crash when someone stopped sharing their screen, and the "Ongoing call" timer start.
+- Android: small video tiles can be drawn on top of a big video (screen share with cameras), shared screens show whole.
+
 ## 0.1.3
 
 - Group video: when a call already has the most cameras (8), you join with audio only and get an error event saying why, instead of the join failing.

@@ -54,7 +54,10 @@ rtc.on("callInvite", ({ fromUserId }) => {
 
 await rtc.callUser("user_456");
 await rtc.acceptCall();
-rtc.muteMicrophone(true);
+rtc.muteMicrophone(true); // the other side gets "remoteMediaState" and can show "muted"
+rtc.on("remoteMediaState", ({ userId, audioMuted, videoOff }) => {
+  // show 🔇 / "camera off" for userId (works in 1:1 calls and group rooms)
+});
 await rtc.endCall();
 
 // Group voice (SFU) — all room members hear each other

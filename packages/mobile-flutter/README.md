@@ -88,7 +88,7 @@ SizedBox(width: 96, height: 128, child: RTCVideoView(local: true)); // self view
 
 ### Events
 
-`connected`, `disconnected`, `roomJoined`, `message`, `callInvite`, `callState`, `remoteVideo`, `diagnostics`, `error`
+`connected`, `disconnected`, `roomJoined`, `message`, `callInvite`, `callState`, `remoteVideo`, `remoteMediaState` (`{roomId, userId, audioMuted, videoOff}`: show "muted" / "camera off" for others), `diagnostics`, `error`
 
 ## Calls in the background (Android)
 
