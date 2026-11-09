@@ -6,3 +6,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "rtc-express-android"
 include(":sdk")
+include(":mediasoup")

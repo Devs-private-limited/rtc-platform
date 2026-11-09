@@ -1,6 +1,6 @@
 {
   "name": "rtcexpress-react-native",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "RTCExpress React Native SDK: voice calls, video calls and in-app chat. Android supported, iOS experimental.",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

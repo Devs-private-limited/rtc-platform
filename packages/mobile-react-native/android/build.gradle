@@ -24,5 +24,6 @@ dependencies {
     // Native SDK sources are synced into src/main/java/com/rtcexpress/sdk by
     // scripts/sync-native-sdks.mjs; these are its dependencies.
     implementation "com.squareup.okhttp3:okhttp:4.12.0"
-    implementation "io.github.haiyangwu:mediasoup-client:3.4.0"
+    // mediasoup-client 3.4.0 rebuilt for 16 KB pages (Google Play, Android 15+); see mobile-android/mediasoup.
+    implementation "com.devsquarelabs:mediasoup-client-android:3.4.0.1"
 }

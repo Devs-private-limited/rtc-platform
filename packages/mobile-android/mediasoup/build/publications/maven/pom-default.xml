@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <!-- This module was also published with a richer model, Gradle metadata,  -->
+  <!-- which should be used instead. Do not delete the following line which  -->
+  <!-- is to indicate to Gradle or any Gradle module metadata file consumer  -->
+  <!-- that they should prefer consuming it instead. -->
+  <!-- do_not_remove: published-with-gradle-metadata -->
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.devsquarelabs</groupId>
+  <artifactId>mediasoup-client-android</artifactId>
+  <version>3.4.0.1</version>
+  <packaging>aar</packaging>
+  <name>mediasoup-client-android (16 KB pages)</name>
+  <description>mediasoup-client-android 3.4.0 by Haiyang Wu (MIT), with the native library rebuilt for 16 KB memory pages (Android 15+, Google Play). Used by the RTCExpress Android, React Native and Flutter SDKs.</description>
+  <url>https://github.com/haiyangwu/mediasoup-client-android</url>
+  <inceptionYear>2026</inceptionYear>
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+    </license>
+    <license>
+      <name>ISC License (libmediasoupclient)</name>
+      <url>https://opensource.org/licenses/ISC</url>
+    </license>
+    <license>
+      <name>BSD 3-Clause License (WebRTC)</name>
+      <url>https://webrtc.googlesource.com/src/+/main/LICENSE</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>haiyangwu</id>
+      <name>Haiyang Wu</name>
+    </developer>
+    <developer>
+      <id>devsquarelabs</id>
+      <name>Devsquare Labs</name>
+      <email>support@devsquarelabs.com</email>
+    </developer>
+  </developers>
+  <scm>
+    <url>https://github.com/haiyangwu/mediasoup-client-android</url>
+  </scm>
+</project>

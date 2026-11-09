@@ -28,7 +28,8 @@ android {
 // Exposed as api: the public API uses OkHttpClient and org.webrtc types (VideoTrack, SurfaceViewRenderer).
 dependencies {
     api("com.squareup.okhttp3:okhttp:4.12.0")
-    api("io.github.haiyangwu:mediasoup-client:3.4.0")
+    // mediasoup-client 3.4.0 rebuilt for 16 KB pages (module ../mediasoup → com.devsquarelabs:mediasoup-client-android).
+    api(project(":mediasoup"))
 }
 
 // Publishes com.devsquarelabs:rtcexpress-android to Maven Central (Central Portal).
