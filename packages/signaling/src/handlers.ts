@@ -1,4 +1,5 @@
 import type { WebSocket } from "ws";
+import { mayJoinRoom } from "./private-rooms.js";
 import type {
   CallInvitePayload,
   CallPeerPayload,
@@ -127,6 +128,13 @@ export async function handleClientMessage(ctx: HandlerContext) {
         return;
       }
       if (!assertRoomScope(ctx, roomId, ws)) return;
+      if (!mayJoinRoom(roomId, userId)) {
+        ctx.send(ws, {
+          type: "error",
+          payload: { message: "This is a private room for two other users (dm_<userA>__<userB>)", code: "private_room_denied" },
+        });
+        return;
+      }
       // A client may opt into audience mode, but cannot elevate its signed role.
       const requestedRole = role === "audience" ? "audience" : ctx.claims.role || "publisher";
       const assignedRole = ctx.roomRoles.assign(roomId, userId, requestedRole);
