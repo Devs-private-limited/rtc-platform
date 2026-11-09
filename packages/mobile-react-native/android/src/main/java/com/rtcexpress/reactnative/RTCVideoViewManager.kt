@@ -18,8 +18,16 @@ import com.rtcexpress.sdk.CallVideoView
 class RTCVideoContainer(context: Context) : FrameLayout(context) {
     val video = CallVideoView(context)
     private val relayout = Runnable {
+        if (width == 0 || height == 0) return@Runnable // not sized yet: onSizeChanged runs it again
         measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
         layout(left, top, right, bottom)
+    }
+
+    // React Native sizes this box without measuring the video inside it; without this a small
+    // tile (the self-view) could keep a 0x0 video and show only the black background.
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        post(relayout)
     }
 
     init {

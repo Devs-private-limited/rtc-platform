@@ -289,6 +289,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         signaling.send("call_accept", callPayload(call, call.peerUserId))
         startOngoing(if (call.callType == "video") "Video call" else "Voice call", call.callType == "video", "In call with ${call.peerUserId}")
         if (resolvedMediaMode() == "sfu") {
+            // Answered: say so now (joining the media server takes a moment), so both timers start together.
+            emitCallState("connecting", call.peerUserId, call.roomId, call.callId, call.callType)
             if (!startSfuCallOrEnd(call)) return
         } else {
             ensureP2p(call.callType == "video")

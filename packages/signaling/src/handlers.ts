@@ -543,6 +543,17 @@ export async function handleClientMessage(ctx: HandlerContext) {
         ctx.send(ws, { type: "error", payload: { message: "Invalid media_state payload" } });
         return;
       }
+      // 1:1 call in this room: straight to the other person (works even if a phone's socket
+      // reconnected and it is no longer listed as a room member).
+      const call = findUserCall(claims.appId, userId);
+      if (call && call.roomId === payload.roomId) {
+        const peer = call.callerUserId === userId ? call.calleeUserId : call.callerUserId;
+        await ctx.sendToUser(peer, {
+          type: "media_state",
+          payload: { roomId: payload.roomId, userId, audioMuted: payload.audioMuted, videoOff: payload.videoOff },
+        });
+        break;
+      }
       if (!(await ctx.rooms.isMember(payload.roomId, userId))) {
         ctx.send(ws, { type: "error", payload: { message: "Join the room first" } });
         return;

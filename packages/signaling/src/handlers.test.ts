@@ -145,3 +145,16 @@ test("media_state is relayed to the others in the room, never to outsiders", asy
   await handleClientMessage(bad);
   assert.equal(bad.sent[0].type, "error");
 });
+
+test("media_state in a 1:1 call reaches the other person even when they are not a room member", async () => {
+  resetCallState();
+  registerRinging("app", "c-ms", "dm_alice__bob", "alice", "bob");
+  markCallConnected("app", "c-ms");
+  const ctx = context({ type: "media_state", payload: { roomId: "dm_alice__bob", audioMuted: true, videoOff: true } });
+  // alice is a member, bob's socket reconnected and is no longer listed in the room
+  await ctx.rooms.join("dm_alice__bob", "alice");
+  await handleClientMessage(ctx);
+  assert.equal(ctx.delivered.length, 1);
+  assert.deepEqual(ctx.delivered[0].payload, { roomId: "dm_alice__bob", userId: "alice", audioMuted: true, videoOff: true });
+  resetCallState();
+});
