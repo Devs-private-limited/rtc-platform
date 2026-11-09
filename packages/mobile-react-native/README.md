@@ -37,6 +37,10 @@ You need an App ID. Create a free account at https://rtc.devsquarelabs.com to ge
 
 Your **backend** requests a short-lived user token from RTCExpress (`POST https://api.devsquarelabs.com/v1/token` with your App ID, App Secret and the user ID). Keep the App Secret on the server, never in the app.
 
+**Easiest way to add calls:** the ready-made call screens (`useRTCCall` + `CallScreen`, below) handle permissions, incoming voice/video, every call state and the UI.
+
+**Calling apps (users call their contacts):** create the token WITHOUT a room (`createToken({ userId })` in `rtcexpress-server`, one per user). After `init`, the app joins one room per contact named from both user IDs sorted (`dm_alice__bob`); to call, join that room again and call. Scoping a token to one contact's room means the user can be called only by that contact. The incoming `callInvite` has `fromUserId` and `callType` (`voice` | `video`).
+
 ```tsx
 import RTCExpress, { RTCVideoView } from 'rtcexpress-react-native';
 

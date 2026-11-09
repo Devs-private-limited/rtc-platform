@@ -36,9 +36,9 @@ from fastapi import Depends, FastAPI
 app = FastAPI()
 
 @app.post("/api/rtc-token")
-def rtc_token(room_id: str, user=Depends(current_user)):  # your own login check
-    # check the user may join this room first
-    result = rtc.create_token(user.id, room_id=room_id)
+def rtc_token(user=Depends(current_user)):  # your own login check
+    # Calling app: no room_id. One fixed room (support chat, meeting): room_id="support-42", after checking access.
+    result = rtc.create_token(user.id)
     return {"token": result.token, "expiresIn": result.expires_in}
 ```
 
@@ -58,7 +58,9 @@ It works the same in Django or Flask. `create_token` is a normal (blocking) call
 Returns a `TokenResponse` with `token` and `expires_in` (seconds, currently one hour).
 
 - `user_id`: your own ID for the user. Each device in a call needs its own.
-- `room_id`: limits the token to one room. Recommended.
+- `room_id`: limits the token to one room. Use it for a single fixed room (a support chat, one meeting); leave it out for calling apps.
+
+**Calling apps (users call their contacts):** create the token WITHOUT a room (`create_token(user_id)`, one per user). After `init`, the app joins one room per contact named from both user IDs sorted (`dm_alice__bob`); to call, join that room again and call. Scoping a token to one contact's room means the user can be called only by that contact.
 - `role`: `"host"`, `"publisher"`, `"subscriber"` or `"audience"`, for broadcast-style rooms.
 
 ### Errors

@@ -23,11 +23,11 @@ const rtc = new RTCExpressServer({
   appSecret: process.env.RTC_APP_SECRET!,
 });
 
-// Example with Express: only signed-in users get a token, for one room.
+// Example with Express: only signed-in users get a token.
 app.post('/api/rtc-token', requireLogin, async (req, res) => {
   const { token, expiresIn } = await rtc.createToken({
     userId: req.user.id,
-    roomId: req.body.roomId, // check the user may join this room first
+    // Calling app: no roomId (see below). One fixed room (support chat, meeting): roomId: 'support-42', after checking access.
   });
   res.json({ token, expiresIn });
 });
@@ -49,7 +49,9 @@ CommonJS works too: `const { RTCExpressServer } = require('rtcexpress-server');`
 Returns `{ token, expiresIn }`, where `expiresIn` is in seconds (currently one hour).
 
 - `userId`: your own ID for the user. Each device in a call needs its own.
-- `roomId`: limits the token to one room. Recommended.
+- `roomId`: limits the token to one room. Use it for a single fixed room (a support chat, one meeting); leave it out for calling apps.
+
+**Calling apps (users call their contacts):** create the token WITHOUT a room (`createToken({ userId })`, one per user). After `init`, the app joins one room per contact named from both user IDs sorted (`dm_alice__bob`); to call, join that room again and call. Scoping a token to one contact's room means the user can be called only by that contact.
 - `role`: `host`, `publisher`, `subscriber` or `audience`, for broadcast-style rooms.
 
 ### Errors
