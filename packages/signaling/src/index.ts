@@ -4,6 +4,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import type {
   ClientMessage,
+  PeerReconnectPayload,
   ServerMessage,
   TokenClaims,
   TokenRequest,
@@ -36,7 +37,7 @@ import { registerPushSettingsRoutes } from "./routes/push-settings.js";
 import { registerConsoleRoutes } from "./routes/console.js";
 import { registerDodoBillingRoutes } from "./routes/dodo-billing.js";
 import { registerPortalRoutes } from "./routes/portal.js";
-import { endMediaSessionsForUser, leaveMediaSession } from "./media-sessions.js";
+import { endMediaSessionsForUser, leaveMediaSession, listMediaSessions } from "./media-sessions.js";
 import { registerMessageRoutes } from "./routes/messages.js";
 import { endActiveCallsForUser, endCallSession } from "./metering.js";
 import { clearUserCalls, expireRingingCalls, findUserCall } from "./call-state.js";
@@ -355,10 +356,16 @@ wss.on("connection", (ws, req) => {
     sockets.set(socketKey, ws);
     previous?.close(4000, "Replaced by a new connection");
     await presence.setOnline(socketKey, env.instanceId);
+    // resumed: rooms and group media were kept (came back within the grace period, or the old
+    // connection was still open when this one arrived).
+    const resumed = (await resumeAfterReconnect(claims.appId, socketKey)) || Boolean(previous);
 
+    // callId: the 1:1 call this user is still in (null = none), so a reconnecting app
+    // knows whether its call survived the drop.
+    const currentCall = findUserCall(claims.appId, userId);
     send(ws, {
       type: "connected",
-      payload: { userId, appId: claims.appId, instanceId: env.instanceId },
+      payload: { userId, appId: claims.appId, instanceId: env.instanceId, callId: currentCall?.callId ?? null, resumed },
     });
 
     const pendingCall = findUserCall(claims.appId, userId);
@@ -394,35 +401,109 @@ wss.on("connection", (ws, req) => {
     }
   });
 
-  ws.on("close", () => {
+  ws.on("close", (code: number) => {
     void projectTasks.run(claims.appId, async () => {
       if (sockets.get(socketKey) !== ws) return;
       sockets.delete(socketKey);
       await presence.setOffline(socketKey);
-      // Close group media and any in-progress call before dropping room
-      // membership, so a lost socket can't leave a session open indefinitely.
-      await endMediaSessionsForUser(claims.appId, userId);
-      await closeUserCall(claims.appId, userId, "disconnected");
-      const stillRinging = findUserCall(claims.appId, userId);
-      if (!(stillRinging?.phase === "ringing" && stillRinging.calleeUserId === userId)) {
-        await endActiveCallsForUser(claims.appId, userId);
-        clearUserCalls(claims.appId, userId);
+      // Lost network (not a normal close) during a call or group call: keep the call for a
+      // short grace period so the app can reconnect and carry on, like WhatsApp.
+      const targets = INTENTIONAL_CLOSE_CODES.has(code) ? [] : await reconnectTargets(claims.appId, userId);
+      if (targets.length === 0) {
+        await dropUser(claims.appId, userId);
+        return;
       }
-      const leftRooms = await appRooms.leaveAll(userId);
-      for (const roomId of leftRooms) {
-        appRoles.remove(roomId, userId);
-        const members = await appRooms.getMembers(roomId);
-        for (const memberId of members) {
-          await relay.sendToUser(tenantKey(claims.appId, memberId), {
-            type: "user_left",
-            payload: { roomId, userId },
-          });
-        }
-        dispatchSafely(claims.appId, "user.left", { roomId, userId });
+      for (const target of targets) {
+        await relay.sendToUser(tenantKey(claims.appId, target.to), { type: "peer_reconnecting", payload: target.payload });
       }
+      const timer = setTimeout(() => {
+        void projectTasks.run(claims.appId, async () => {
+          if (pendingDrops.get(socketKey)?.timer !== timer) return;
+          pendingDrops.delete(socketKey);
+          if (sockets.has(socketKey)) return;
+          await dropUser(claims.appId, userId);
+        }).catch((err) => app.log.error({ err }, "Disconnect cleanup failed"));
+      }, env.reconnectGraceMs);
+      timer.unref();
+      pendingDrops.set(socketKey, { timer, targets });
     }).catch((err) => app.log.error({ err }, "Disconnect cleanup failed"));
   });
 });
+
+/** Normal closes (app closed the socket, page closed): no reconnect grace. */
+const INTENTIONAL_CLOSE_CODES = new Set([1000, 1001, 1005]);
+
+/** Users whose connection dropped mid-call, waiting for them to come back. */
+const pendingDrops = new Map<string, { timer: NodeJS.Timeout; targets: ReconnectTarget[] }>();
+
+interface ReconnectTarget {
+  to: string;
+  payload: PeerReconnectPayload;
+}
+
+/** Who should hear that [userId] is reconnecting: their call peer and the others in their group calls. */
+async function reconnectTargets(appId: string, userId: string): Promise<ReconnectTarget[]> {
+  const targets: ReconnectTarget[] = [];
+  const call = findUserCall(appId, userId);
+  if (call?.phase === "connected") {
+    const peer = call.callerUserId === userId ? call.calleeUserId : call.callerUserId;
+    targets.push({ to: peer, payload: { userId, roomId: call.roomId, callId: call.callId } });
+  }
+  let mediaRooms: string[] = [];
+  try {
+    const sessions = await listMediaSessions(appId, { userId, active: true, limit: 20 });
+    mediaRooms = [...new Set(sessions.map((s) => s.roomId))];
+  } catch {
+    /* no database (tests): only the 1:1 call counts */
+  }
+  const appRooms = scopedRooms(rooms, appId);
+  for (const roomId of mediaRooms) {
+    if (call && roomId.startsWith(`${call.roomId}-call-`)) continue; // the 1:1 call's own media room
+    for (const memberId of await appRooms.getMembers(roomId)) {
+      if (memberId !== userId) targets.push({ to: memberId, payload: { userId, roomId } });
+    }
+  }
+  return targets;
+}
+
+/** The user came back in time: cancel the drop and tell the others. */
+async function resumeAfterReconnect(appId: string, socketKey: string) {
+  const pending = pendingDrops.get(socketKey);
+  if (!pending) return false;
+  clearTimeout(pending.timer);
+  pendingDrops.delete(socketKey);
+  for (const target of pending.targets) {
+    await relay.sendToUser(tenantKey(appId, target.to), { type: "peer_reconnected", payload: target.payload });
+  }
+  return true;
+}
+
+/** The user is gone for good: end their calls and group media and leave their rooms. */
+async function dropUser(appId: string, userId: string) {
+  const appRooms = scopedRooms(rooms, appId);
+  const appRoles = scopedRoles(roomRoles, appId);
+  // Close group media and any in-progress call before dropping room
+  // membership, so a lost socket can't leave a session open indefinitely.
+  await endMediaSessionsForUser(appId, userId);
+  await closeUserCall(appId, userId, "disconnected");
+  const stillRinging = findUserCall(appId, userId);
+  if (!(stillRinging?.phase === "ringing" && stillRinging.calleeUserId === userId)) {
+    await endActiveCallsForUser(appId, userId);
+    clearUserCalls(appId, userId);
+  }
+  const leftRooms = await appRooms.leaveAll(userId);
+  for (const roomId of leftRooms) {
+    appRoles.remove(roomId, userId);
+    const members = await appRooms.getMembers(roomId);
+    for (const memberId of members) {
+      await relay.sendToUser(tenantKey(appId, memberId), {
+        type: "user_left",
+        payload: { roomId, userId },
+      });
+    }
+    dispatchSafely(appId, "user.left", { roomId, userId });
+  }
+}
 
 await app.listen({ port: env.port, host: "0.0.0.0" });
 console.log(`RTC signaling server on http://localhost:${env.port}`);

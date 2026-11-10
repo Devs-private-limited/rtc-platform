@@ -11,6 +11,8 @@ export interface SignalingEnv {
   jwtSecret: string;
   adminApiKey: string;
   instanceId: string;
+  /** How long a dropped user (mid-call) has to reconnect before the call ends. */
+  reconnectGraceMs: number;
   redisUrl: string | null;
   databaseUrl: string | null;
   sfuUrl: string | null;
@@ -44,6 +46,7 @@ export function loadSignalingEnv(): SignalingEnv {
     jwtSecret,
     adminApiKey,
     instanceId: process.env.INSTANCE_ID || randomUUID(),
+    reconnectGraceMs: Number(process.env.RECONNECT_GRACE_MS) || 30_000,
     redisUrl: process.env.REDIS_URL || null,
     databaseUrl: process.env.DATABASE_URL || null,
     sfuUrl: process.env.SFU_URL || null,

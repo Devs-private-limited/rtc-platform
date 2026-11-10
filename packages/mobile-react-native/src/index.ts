@@ -64,6 +64,8 @@ export type RTCEventName =
   | "screenShare"
   /** { roomId, userId, audioMuted, videoOff }: someone else muted / turned their camera off (or back on). */
   | "remoteMediaState"
+  /** { roomId, userId, reconnecting }: someone in the call/group lost their network (true) or is back (false). */
+  | "peerReconnecting"
   | "diagnostics"
   | "error";
 

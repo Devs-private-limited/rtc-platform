@@ -111,6 +111,11 @@ export interface RTCEvents {
   ];
   /** Someone else in the room/call muted their mic or turned their camera off (or back on). */
   remoteMediaState: [{ roomId: string; userId: string; audioMuted: boolean; videoOff: boolean }];
+  /**
+   * Someone in your call or group call lost their network (`reconnecting: true`) or is back
+   * (`false`). Show "<name> reconnecting…". If they don't come back in ~30 s they leave as usual.
+   */
+  peerReconnecting: [{ roomId: string; userId: string; callId?: string; reconnecting: boolean }];
   roomEnded: [{ roomId: string }];
   broadcastJoined: [{ roomId: string }];
   message: [import("@rtc/protocol").RoomMessagePayload];

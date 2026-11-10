@@ -292,6 +292,12 @@ class RTCExpressModule(private val reactContext: ReactApplicationContext) :
         })
     }
 
+    override fun onPeerReconnecting(roomId: String, userId: String, reconnecting: Boolean) {
+        emit("peerReconnecting", Arguments.createMap().apply {
+            putString("roomId", roomId); putString("userId", userId); putBoolean("reconnecting", reconnecting)
+        })
+    }
+
     override fun onAudioLevels(levels: Map<String, Double>) {
         emit("audioLevels", Arguments.createMap().apply { levels.forEach { (user, level) -> putDouble(user, level) } })
     }

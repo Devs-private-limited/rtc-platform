@@ -37,6 +37,7 @@ export function OngoingCallBar({ call, group, groupTitle, displayName, color = "
     const name = displayName ? displayName(one.peerUserId) : one.peerUserId;
     const state =
       one.phase === "ended" ? t[one.endReason || "ended"]
+      : one.phase === "connected" && one.reconnecting ? t.reconnecting
       : one.phase === "connected" && one.connectedAt ? formatDuration(now - one.connectedAt)
       : one.phase === "connecting" ? t.connecting
       : t.ringing;

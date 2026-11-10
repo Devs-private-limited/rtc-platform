@@ -4,6 +4,7 @@ import type {
   ClientMessage,
   MediaParticipantPayload,
   MessageHistoryPage,
+  PeerReconnectPayload,
   PlatformConfig,
   RoomMessagePayload,
   RoomRole,
@@ -92,6 +93,13 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
   private reconnectBaseDelayMs = 1000;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private callMediaConnected = false;
+  /** Ends the call if the connection doesn't come back in time after a network drop. */
+  private callReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private callReconnectMs = 30_000;
+  /** From the server's `connected` message: our call still alive after reconnecting (null = none; undefined = old server). */
+  private serverCallId: string | null | undefined = undefined;
+  /** From the server's `connected` message: the server kept our rooms and group media while we were away. */
+  private serverResumed = false;
   /** Our own mic/camera state, sent to the others so they can show "muted" / "camera off". */
   private localMediaState = { audioMuted: false, videoOff: false };
 
@@ -199,6 +207,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
         this.emit("disconnected");
         if (!this.intentionalClose && this.autoReconnect) {
           this.sessionSnapshot = this.captureSession();
+          this.startCallReconnectWindow();
           void this.scheduleReconnect();
         }
       };
@@ -235,12 +244,86 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
     }, delayMs);
   }
 
+  /** Our connection dropped mid-call: say "reconnecting" and give it ~30 s before ending the call. */
+  private startCallReconnectWindow() {
+    const call = this.activeCall;
+    if (!call || !this.callMediaConnected || this.callReconnectTimer) return;
+    this.emitCallState("reconnecting");
+    this.callReconnectTimer = setTimeout(() => {
+      this.callReconnectTimer = null;
+      if (this.ws) return;
+      this.emit("error", { message: "Call ended: the connection did not come back", code: "connection_lost" });
+      this.cleanupCall("ended");
+    }, this.callReconnectMs);
+  }
+
+  private clearCallReconnectTimer() {
+    if (this.callReconnectTimer) clearTimeout(this.callReconnectTimer);
+    this.callReconnectTimer = null;
+  }
+
+  private emitCallState(state: "reconnecting" | "connected") {
+    const call = this.activeCall;
+    if (!call) return;
+    this.emit("callState", {
+      callId: call.callId,
+      state,
+      peerUserId: call.peerUserId,
+      roomId: call.roomId,
+      mediaMode: this.resolvedMediaMode,
+      callType: call.callType,
+    });
+  }
+
+  /** Back online: keep the call going (new network path for the media) or end it if the server ended it. */
+  private async resumeCallAfterReconnect() {
+    const call = this.activeCall;
+    this.clearCallReconnectTimer();
+    if (!call || !this.callMediaConnected) return;
+    if (this.serverCallId !== undefined && this.serverCallId !== call.callId) {
+      this.cleanupCall("ended"); // we were away too long: the server already ended it
+      return;
+    }
+    try {
+      if (this.sfu && this.resolvedMediaMode === "sfu") {
+        if (!this.sfu.isMediaHealthy()) await this.rebuildSfu();
+        this.emitCallState("connected");
+      } else if (this.p2p) {
+        // "connected" is sent by the P2P engine once the new path works.
+        if (this.p2p.isConnected()) this.emitCallState("connected");
+        else await this.p2p.restartIce(call.peerUserId, call.callId);
+      }
+      this.sendMediaState(true);
+    } catch (err) {
+      try { this.send({ type: "call_end", payload: { callId: call.callId, roomId: call.roomId, fromUserId: this.userId, toUserId: call.peerUserId } }); } catch { /* offline */ }
+      this.emit("error", { message: `Call ended: could not reconnect the media (${(err as Error).message})`, code: "connection_lost" });
+      this.cleanupCall("ended");
+    }
+  }
+
+  /** Join the media server again with fresh transports (the old network path is gone). */
+  private async rebuildSfu() {
+    const old = this.sfu;
+    if (!old) return;
+    const snap = old.snapshot();
+    old.destroy();
+    this.sfu = null;
+    if (!snap.roomId) return;
+    const engine = this.getSfu();
+    await engine.joinRoom(snap.roomId, snap.joinOptions);
+    engine.closeOldProducers(snap); // after joining, so the others already have our new media
+    if (this.localMediaState.audioMuted) engine.muteMicrophone(true);
+    if (this.localMediaState.videoOff) engine.muteCamera(true);
+    this.emitLocalStream();
+  }
+
   private async tryReconnect() {
     const snapshot = this.sessionSnapshot;
     try {
       await this.connect();
       this.reconnectAttempts = 0;
       this.emit("reconnected");
+      await this.resumeCallAfterReconnect();
       if (snapshot?.roomId) {
         await this.restoreSession(snapshot);
       }
@@ -286,16 +369,29 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
       return;
     }
 
+    if (!snapshot.inVideoRoom && !snapshot.inVoiceRoom) return;
+    if (this.serverResumed && this.sfu) {
+      // The server kept our group media while we were away: only the network path needs fixing.
+      if (!this.sfu.isMediaHealthy()) {
+        try {
+          await this.rebuildSfu();
+        } catch {
+          this.leaveVideoRoom();
+          this.leaveVoiceRoom();
+        }
+      }
+      this.sendMediaState(true);
+      return;
+    }
+    // Away too long: the server removed us from the group call. Join it again from scratch.
+    this.sfu?.destroy();
+    this.sfu = null;
+    this.inVideoRoom = false;
+    this.inVoiceRoom = false;
     if (snapshot.inVideoRoom) {
       await this.joinVideoRoom();
     } else if (snapshot.inVoiceRoom) {
       await this.joinVoiceRoom();
-    }
-
-    if (snapshot.activeCall && snapshot.callMediaConnected) {
-      const { callId, peerUserId, roomId, isCaller, callType } = snapshot.activeCall;
-      this.activeCall = { callId, peerUserId, roomId, isCaller, callType };
-      await this.startCallMedia(peerUserId, roomId, callId, isCaller, callType);
     }
   }
 
@@ -353,9 +449,23 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
 
   private handleServerMessage(message: ServerMessage) {
     switch (message.type) {
-      case "connected":
-        this.emit("connected", message.payload as { userId: string });
+      case "connected": {
+        const payload = message.payload as { userId: string; callId?: string | null; resumed?: boolean };
+        this.serverCallId = payload.callId;
+        this.serverResumed = payload.resumed === true;
+        this.emit("connected", { userId: payload.userId });
         break;
+      }
+      case "peer_reconnecting":
+      case "peer_reconnected": {
+        const payload = message.payload as PeerReconnectPayload;
+        const reconnecting = message.type === "peer_reconnecting";
+        this.emit("peerReconnecting", { ...payload, reconnecting });
+        if (this.activeCall && payload.callId === this.activeCall.callId && this.callMediaConnected) {
+          this.emitCallState(reconnecting ? "reconnecting" : "connected");
+        }
+        break;
+      }
       case "room_joined": {
         const payload = message.payload as { roomId: string; members: string[]; role?: RoomRole };
         this.roomId = payload.roomId;
@@ -1106,6 +1216,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
   }
 
   private cleanupCall(state: "ended" | "rejected", reason?: "declined" | "busy" | "refused") {
+    this.clearCallReconnectTimer();
     if (!this.activeCall) return;
     this.stopQualityMonitoring();
     this.callMediaConnected = false;
@@ -1133,6 +1244,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
 
   destroy() {
     this.intentionalClose = true;
+    this.clearCallReconnectTimer();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -1140,7 +1252,7 @@ export class RTCExpress extends EventEmitter<RTCEvents> {
     this.endCall();
     this.leaveVoiceRoom();
     this.leaveVideoRoom();
-    this.ws?.close();
+    this.ws?.close(1000, "bye");
     this.ws = null;
   }
 }

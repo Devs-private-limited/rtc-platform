@@ -62,13 +62,15 @@ export function GroupCallScreen({ controller, userId, title, displayName, theme:
         <Text style={[styles.tileName, small && styles.tileNameSmall, { color: theme.text }]} numberOfLines={1}>
           {name(u)}
           {theyMuted ? " 🔇" : ""}
+          {!isMe && controller.reconnectingPeople.includes(u) ? ` · ${t.reconnecting}` : ""}
         </Text>
       </View>
     );
   }
 
-  const status =
-    g.phase === "connected" && g.joinedAt
+  const status = g.reconnecting
+    ? t.reconnecting
+    : g.phase === "connected" && g.joinedAt
       ? `${g.kind === "video" ? t.videoCall : t.voiceCall} · ${people.length} · ${formatDuration(now - g.joinedAt)}`
       : t.joining;
 

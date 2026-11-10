@@ -531,6 +531,56 @@ export class SfuMediaEngine {
     };
   }
 
+  /** False when the network path to the media server broke (e.g. Wi-Fi dropped): rejoin needed. */
+  isMediaHealthy() {
+    const bad = ["failed", "disconnected", "closed"];
+    return [this.sendTransport, this.recvTransport].every((t) => !t || !bad.includes(t.connectionState));
+  }
+
+  /** What this engine is sending (taken before destroy() when rejoining after a network drop). */
+  snapshot() {
+    return {
+      roomId: this.roomId,
+      joinOptions: { ...this.joinOptions },
+      producers: [...this.producers.values()].map((p) => ({
+        producerId: p.id,
+        kind: this.producerMeta.get(p.id)?.kind ?? (p.kind as MediaKind),
+        source: this.producerMeta.get(p.id)?.source,
+      })),
+    };
+  }
+
+  /**
+   * After rejoining: tell the server and the others that our OLD media (from [old]) is gone, so
+   * they drop their frozen copies. Call after joinRoom(), so they already have the new media.
+   */
+  closeOldProducers(old: ReturnType<SfuMediaEngine["snapshot"]>) {
+    if (!old.roomId) return;
+    const base = this.sfuUrl.replace(/\/$/, "");
+    for (const p of old.producers) {
+      void fetch(`${base}/v1/rooms/${encodeURIComponent(old.roomId)}/producers/${p.producerId}/close`, {
+        method: "POST",
+        headers: this.apiHeaders(),
+        body: JSON.stringify({ peerId: this.userId }),
+      }).catch(() => undefined);
+      try {
+        this.sendSignal({
+          type: "sfu_producer_closed",
+          payload: {
+            roomId: old.roomId,
+            producerId: p.producerId,
+            toUserId: old.joinOptions.targetUserId,
+            callId: old.joinOptions.callId,
+            kind: p.kind,
+            source: p.source,
+          },
+        });
+      } catch {
+        /* not connected */
+      }
+    }
+  }
+
   destroy() {
     for (const consumer of this.consumers.values()) consumer.close();
     this.consumers.clear();

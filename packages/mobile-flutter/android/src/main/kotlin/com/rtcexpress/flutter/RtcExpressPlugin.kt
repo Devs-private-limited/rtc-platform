@@ -63,6 +63,8 @@ class RtcExpressPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, RTCExpr
         emit("screenShare", mapOf("userId" to userId, "active" to active, "local" to (userId == myUserId)))
     override fun onRemoteMediaState(roomId: String, userId: String, audioMuted: Boolean, videoOff: Boolean) =
         emit("remoteMediaState", mapOf("roomId" to roomId, "userId" to userId, "audioMuted" to audioMuted, "videoOff" to videoOff))
+    override fun onPeerReconnecting(roomId: String, userId: String, reconnecting: Boolean) =
+        emit("peerReconnecting", mapOf("roomId" to roomId, "userId" to userId, "reconnecting" to reconnecting))
     private var rtc: RTCExpress? = null
     private var appContext: Context? = null
 

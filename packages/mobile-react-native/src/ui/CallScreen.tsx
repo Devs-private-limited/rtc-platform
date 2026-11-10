@@ -139,6 +139,7 @@ export function CallScreen({ controller, displayName, theme: themeIn, labels: la
 function statusText(call: RTCCall, t: RTCCallLabels, now: number, peerSpeaking: boolean) {
   if (call.phase === "ended") return t[call.endReason || "ended"];
   if (call.direction === "incoming" && call.phase === "ringing") return call.video ? t.incomingVideo : t.incomingVoice;
+  if (call.phase === "connected" && call.reconnecting) return t.reconnecting;
   if (call.phase === "connected" && call.connectedAt) {
     const base = `${call.video ? t.videoCall : t.voiceCall} · ${formatDuration(now - call.connectedAt)}`;
     return peerSpeaking ? `${base} · ${t.speaking}` : base;

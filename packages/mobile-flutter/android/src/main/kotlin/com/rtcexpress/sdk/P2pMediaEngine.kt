@@ -51,6 +51,8 @@ class P2pMediaEngine(
     private var focus: AudioFocusRequest? = null
     private var destroyed = false
     private var connected = false
+    /** Audio/video can flow right now (false after a network drop until ICE recovers). */
+    @Volatile private var iceConnected = false
 
     var onRemoteVideoTrack: ((VideoTrack) -> Unit)? = null
     var onConnectionState: ((String) -> Unit)? = null
@@ -121,9 +123,18 @@ class P2pMediaEngine(
                     when (state) {
                         PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> {
                             connected = true
+                            iceConnected = true
                             onConnectionState?.invoke("connected")
                         }
-                        PeerConnection.IceConnectionState.FAILED -> onConnectionState?.invoke("failed")
+                        // Network lost for a moment: WebRTC may recover by itself; say so instead of ending.
+                        PeerConnection.IceConnectionState.DISCONNECTED -> {
+                            iceConnected = false
+                            onConnectionState?.invoke("reconnecting")
+                        }
+                        PeerConnection.IceConnectionState.FAILED -> {
+                            iceConnected = false
+                            onConnectionState?.invoke("failed")
+                        }
                         else -> Unit
                     }
                 }
@@ -197,6 +208,30 @@ class P2pMediaEngine(
                     }, description)
                 }
             }, MediaConstraints())
+        }
+    }
+
+    fun isConnected() = iceConnected
+
+    /** After a network change: look for a new network path (ICE restart) without ending the call. */
+    fun restartIce(peerUserId: String, callId: String) {
+        mainHandler.post {
+            val pc = peerConnection ?: return@post
+            val constraints = MediaConstraints().apply {
+                mandatory.add(MediaConstraints.KeyValuePair("IceRestart", "true"))
+            }
+            pc.createOffer(object : SimpleSdpObserver("restart-offer") {
+                override fun onCreateSuccess(description: SessionDescription) {
+                    val payload = JSONObject()
+                        .put("callId", callId)
+                        .put("fromUserId", userId)
+                        .put("toUserId", peerUserId)
+                        .put("sdp", JSONObject().put("type", description.type.canonicalForm()).put("sdp", description.description))
+                    pc.setLocalDescription(object : SimpleSdpObserver("local-restart-offer") {
+                        override fun onSetSuccess() { runCatching { sendSignaling("webrtc_offer", payload) } }
+                    }, description)
+                }
+            }, constraints)
         }
     }
 

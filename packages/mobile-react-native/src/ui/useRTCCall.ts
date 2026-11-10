@@ -31,6 +31,8 @@ export interface RTCCall {
   answeredAt?: number;
   /** Set when phase is "ended". */
   endReason?: CallEndReason;
+  /** The network dropped (this phone or the other person); the call resumes when it is back (~30 s). */
+  reconnecting?: boolean;
   /** Last error message for this call (permission denied, plan limit, network). */
   error?: string;
 }
@@ -182,6 +184,10 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
           finish(reasonFor(state, c));
           return;
         }
+        if (state === "reconnecting") {
+          if (c.phase === "connected" && !c.reconnecting) update({ ...c, reconnecting: true });
+          return;
+        }
         if (!LIVE_STATES.includes(state)) return; // e.g. P2P "checking"
         if (c.direction === "incoming" && !c.accepted) return; // still ringing here
         // Phones on the media server only report "connecting" after answering: that is connected.
@@ -192,6 +198,7 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
           callId: c.callId || p?.callId,
           roomId: c.roomId || p?.roomId,
           phase,
+          reconnecting: live ? false : c.reconnecting,
           answeredAt: c.answeredAt || (state === "connecting" || live ? Date.now() : undefined),
           connectedAt: c.connectedAt || (live ? c.answeredAt || Date.now() : undefined),
         });
@@ -223,7 +230,12 @@ export function useRTCCall(client: RTCExpress | null | undefined, options: UseRT
         const talking = now - lastLoud.current < 500;
         setPeerSpeaking((cur) => (cur === talking ? cur : talking));
       }),
-      client.on("disconnected", () => finish(callRef.current?.connectedAt ? "ended" : "failed", "Connection lost")),
+      // A connected call survives a network drop: the SDK says "reconnecting", then "connected" or "ended".
+      client.on("disconnected", () => {
+        const c = callRef.current;
+        if (!c || c.phase === "ended" || (c.phase === "connected" && c.reconnecting)) return;
+        finish(c.connectedAt ? "ended" : "failed", "Connection lost");
+      }),
       client.on("remoteMediaState", (p: any) => {
         const c = callRef.current;
         if (!c || c.phase === "ended" || p?.userId !== c.peerUserId) return;

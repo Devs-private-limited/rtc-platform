@@ -21,6 +21,12 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         fun onScreenShare(userId: String, active: Boolean) {}
         /** [userId] (someone else in the call or group) muted their mic / turned their camera off, or back on. */
         fun onRemoteMediaState(roomId: String, userId: String, audioMuted: Boolean, videoOff: Boolean) {}
+        /**
+         * [userId] (someone else in the call or group) lost their network ([reconnecting] = true) or
+         * is back (false). Show "<name> reconnecting…". Not back in ~30 s = they leave as usual.
+         * Your own drops show as onCallState("reconnecting") for calls.
+         */
+        fun onPeerReconnecting(roomId: String, userId: String, reconnecting: Boolean) {}
         fun onVoiceRoomJoined(roomId: String) {}
         fun onVoiceRoomLeft(roomId: String) {}
         fun onVideoRoomJoined(roomId: String) {}
@@ -69,6 +75,20 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     // Our own mic/camera state, sent to the others so they can show "muted" / "camera off".
     @Volatile private var localAudioMuted = false
     @Volatile private var localVideoOff = false
+
+    // Reconnect after a network drop during a call or group call (Wi-Fi off, switching networks).
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    @Volatile private var reconnecting = false
+    private var reconnectAttempt = 0
+    private var reconnectStartedAt = 0L
+    /** The 1:1 call has media (answered), so a drop should reconnect instead of ending it. */
+    @Volatile private var callLive = false
+    // From the server's "connected" message (see SignalingClient.Listener.onSessionInfo).
+    private var serverCallId: String? = null
+    private var serverResumed = false
+    private var serverInfoKnown = false
+    /** P2P media path lost while signaling stayed up: end the call if it isn't back by then. */
+    private var mediaRecoveryDeadline: Runnable? = null
 
     private data class ActiveCall(
         val callId: String,
@@ -162,18 +182,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         requirePlan(voiceSfuAllowed, "Group voice calls")
         val url = sfuUrl ?: throw IllegalStateException("SFU not available")
         if (sfu == null) {
-            sfu = SfuMediaEngine(
-                context = context,
-                sfuUrl = url,
-                userId = userId,
-                authToken = token,
-                sendSignaling = { type, payload -> signaling.send(type, payload) },
-                onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
-                onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
-                onAudioLevels = { levels -> listener?.onAudioLevels(levels) },
-                onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) },
-                onWarning = { message -> listener?.onError(message) }
-            )
+            sfu = newSfuEngine(url)
         }
         try {
             sfu?.joinRoom(room, SfuJoinOptions(audio = true, video = false, announceToRoom = true))
@@ -210,18 +219,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         requirePlan(videoSfuAllowed, "Group video calls")
         val url = sfuUrl ?: throw IllegalStateException("SFU not available")
         if (sfu == null) {
-            sfu = SfuMediaEngine(
-                context = context,
-                sfuUrl = url,
-                userId = userId,
-                authToken = token,
-                sendSignaling = { type, payload -> signaling.send(type, payload) },
-                onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
-                onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
-                onAudioLevels = { levels -> listener?.onAudioLevels(levels) },
-                onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) },
-                onWarning = { message -> listener?.onError(message) }
-            )
+            sfu = newSfuEngine(url)
         }
         try {
             sfu?.joinRoom(room, SfuJoinOptions(audio = true, video = true, announceToRoom = true))
@@ -290,6 +288,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         startOngoing(if (call.callType == "video") "Video call" else "Voice call", call.callType == "video", "In call with ${call.peerUserId}")
         if (resolvedMediaMode() == "sfu") {
             if (!startSfuCallOrEnd(call)) return
+            callLive = true
         } else {
             ensureP2p(call.callType == "video")
         }
@@ -366,6 +365,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     }
 
     fun destroy() {
+        reconnecting = false
+        mainHandler.removeCallbacksAndMessages(RECONNECT_TOKEN)
         endCall()
         leaveVoiceRoom()
         leaveVideoRoom()
@@ -379,21 +380,193 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     }
 
     companion object {
+        /** How long to keep trying after a network drop before the call ends (server waits ~30 s too). */
+        private const val RECONNECT_WINDOW_MS = 30_000L
+        private val RECONNECT_TOKEN = Any()
+
         fun fetchToken(serverUrl: String, request: TokenRequest): TokenResponse {
             return TokenClient().fetchToken(serverUrl, request)
         }
     }
 
+    override fun onSessionInfo(callId: String?, resumed: Boolean, known: Boolean) {
+        serverCallId = callId
+        serverResumed = resumed
+        serverInfoKnown = known
+    }
+
     override fun onConnected(userId: String) {
         signalingReady = true
         flushJoinRoom()
+        val wasReconnecting = reconnecting
+        if (wasReconnecting) {
+            reconnecting = false
+            mainHandler.removeCallbacksAndMessages(RECONNECT_TOKEN)
+            resumeAfterReconnect()
+        }
         listener?.onConnected(userId)
     }
 
     override fun onDisconnected() {
         signalingReady = false
+        if (reconnecting) {
+            scheduleReconnectAttempt() // this attempt failed: try again soon
+            return
+        }
+        val inCallOrGroup = (activeCall != null && callLive) || inVoiceRoom || inVideoRoom
+        if (inCallOrGroup && !signaling.tokenRejected && serverUrl.isNotBlank()) {
+            // Network dropped mid-call: keep the call and reconnect (~30 s), like WhatsApp.
+            reconnecting = true
+            reconnectAttempt = 0
+            reconnectStartedAt = System.currentTimeMillis()
+            activeCall?.let { emitCallState("reconnecting", it.peerUserId, it.roomId, it.callId, it.callType) }
+            listener?.onDisconnected()
+            scheduleReconnectAttempt()
+            return
+        }
         cleanupCall("ended")
         listener?.onDisconnected()
+    }
+
+    private fun scheduleReconnectAttempt() {
+        val delay = minOf(1000L shl minOf(reconnectAttempt, 3), 5000L) // 1, 2, 4, 5, 5... s
+        reconnectAttempt++
+        mainHandler.postAtTime({
+            if (!reconnecting) return@postAtTime
+            if (System.currentTimeMillis() - reconnectStartedAt > RECONNECT_WINDOW_MS || signaling.tokenRejected) {
+                giveUpReconnect()
+                return@postAtTime
+            }
+            signaling.connect(serverUrl, token)
+        }, RECONNECT_TOKEN, android.os.SystemClock.uptimeMillis() + delay)
+    }
+
+    /** The network did not come back in time: end the call / group call on this phone. */
+    private fun giveUpReconnect() {
+        reconnecting = false
+        mainHandler.removeCallbacksAndMessages(RECONNECT_TOKEN)
+        cleanupCall("ended")
+        dropGroupMediaLocally()
+        listener?.onError("Call ended: the connection did not come back")
+    }
+
+    /** Leave group voice/video on this phone only (the server already removed us). */
+    private fun dropGroupMediaLocally() {
+        if (!inVoiceRoom && !inVideoRoom) return
+        val room = roomId
+        val wasVideo = inVideoRoom
+        screenShareEnded()
+        sfu?.destroy()
+        sfu = null
+        inVoiceRoom = false
+        inVideoRoom = false
+        if (activeCall == null) resetMediaState()
+        stopOngoingIfIdle()
+        if (room != null) {
+            if (wasVideo) listener?.onVideoRoomLeft(room) else listener?.onVoiceRoomLeft(room)
+        }
+    }
+
+    /** Back online after a drop: keep the call / group call going on a new network path. */
+    private fun resumeAfterReconnect() {
+        val call = activeCall
+        if (call != null && callLive) {
+            if (serverInfoKnown && serverCallId != call.callId) {
+                cleanupCall("ended") // away too long: the server already ended the call
+            } else {
+                try {
+                    val engine = sfu
+                    val p2pEngine = p2p
+                    if (engine != null && resolvedMediaMode() == "sfu") {
+                        if (!engine.isMediaHealthy()) rebuildSfu()
+                        emitCallState("connected", call.peerUserId, call.roomId, call.callId, call.callType)
+                    } else if (p2pEngine != null) {
+                        // "connected" comes from the P2P engine once the new path works.
+                        if (p2pEngine.isConnected()) emitCallState("connected", call.peerUserId, call.roomId, call.callId, call.callType)
+                        else p2pEngine.restartIce(call.peerUserId, call.callId)
+                    }
+                    sendMediaState(onlyIfChanged = true)
+                } catch (e: Exception) {
+                    runCatching { signaling.send("call_end", callPayload(call, call.peerUserId)) }
+                    cleanupCall("failed")
+                    listener?.onError("Call ended: could not reconnect the media (${e.message})")
+                }
+            }
+        }
+        if (inVoiceRoom || inVideoRoom) {
+            if (serverResumed && sfu != null) {
+                try {
+                    if (sfu?.isMediaHealthy() == false) rebuildSfu()
+                    sendMediaState(onlyIfChanged = true)
+                } catch (e: Exception) {
+                    listener?.onError("Left the group call: could not reconnect the media (${e.message})")
+                    runCatching { leaveVideoRoom() }
+                    runCatching { leaveVoiceRoom() }
+                }
+            } else {
+                // Away too long: the server removed us from the group call. Join it again.
+                val video = inVideoRoom
+                screenShareEnded()
+                sfu?.destroy()
+                sfu = null
+                inVoiceRoom = false
+                inVideoRoom = false
+                try {
+                    if (video) joinVideoRoom() else joinVoiceRoom()
+                } catch (e: Exception) {
+                    listener?.onError(e.message ?: "Could not rejoin the group call")
+                    if (activeCall == null) resetMediaState()
+                    stopOngoingIfIdle()
+                    roomId?.let { if (video) listener?.onVideoRoomLeft(it) else listener?.onVoiceRoomLeft(it) }
+                }
+            }
+        }
+    }
+
+    /** Join the media server again with fresh connections (the old network path is gone). Blocking. */
+    private fun rebuildSfu() {
+        val old = sfu ?: return
+        val snap = old.snapshot()
+        val wasSharing = sharingScreen
+        screenShareEnded() // the screen share was on the old connection
+        old.destroy()
+        sfu = null
+        if (wasSharing) restoreOngoingAfterScreen()
+        val room = snap.roomId ?: return
+        val url = sfuUrl ?: throw IllegalStateException("SFU not available")
+        val engine = newSfuEngine(url)
+        sfu = engine
+        engine.joinRoom(room, snap.options)
+        engine.closeOldProducers(snap) // after joining, so the others already show our new media
+        if (localAudioMuted) engine.muteMicrophone(true)
+        if (localVideoOff) engine.muteCamera(true)
+    }
+
+    override fun onPeerReconnect(payload: JSONObject, reconnecting: Boolean) {
+        val room = payload.optString("roomId")
+        val who = payload.optString("userId")
+        if (who.isBlank() || who == userId) return
+        listener?.onPeerReconnecting(room, who, reconnecting)
+        val call = activeCall ?: return
+        if (callLive && payload.optString("callId") == call.callId) {
+            emitCallState(if (reconnecting) "reconnecting" else "connected", call.peerUserId, call.roomId, call.callId, call.callType)
+        }
+    }
+
+    /** P2P only: the media path broke but signaling is fine. Try an ICE restart; end after ~30 s. */
+    private fun recoverP2pMedia(call: ActiveCall) {
+        emitCallState("reconnecting", call.peerUserId, call.roomId, call.callId, call.callType)
+        if (signalingReady) runCatching { p2p?.restartIce(call.peerUserId, call.callId) }
+        if (mediaRecoveryDeadline != null) return
+        val deadline = Runnable {
+            mediaRecoveryDeadline = null
+            if (activeCall?.callId == call.callId && p2p?.isConnected() != true && !reconnecting) {
+                endCall()
+                listener?.onError("Media connection failed. Try another network.")
+            }
+        }
+        mediaRecoveryDeadline = deadline
+        mainHandler.postDelayed(deadline, RECONNECT_WINDOW_MS)
     }
 
     override fun onRoomJoined(roomId: String, members: List<String>) {
@@ -443,6 +616,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
             // Answered: say so now (joining the media server takes a moment), so both timers start together.
             emitCallState("connecting", call.peerUserId, call.roomId, call.callId, call.callType)
             if (!startSfuCallOrEnd(call)) return
+            callLive = true
             emitCallState("connected", call.peerUserId, call.roomId, call.callId, call.callType)
             return
         }
@@ -577,6 +751,8 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     }
 
     override fun onError(message: String, code: String?) {
+        // Failed reconnect attempts are expected while the network is down: no error for each one.
+        if (code == "connection_failed" && reconnecting) return
         // The server refused our call (busy, offline, not in the plan...): don't leave it ringing.
         if (code in listOf("call_busy", "user_offline", "plan_feature_denied", "invalid_call") && activeCall?.isCaller == true) {
             cleanupCall("rejected")
@@ -615,18 +791,7 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
     private fun startSfuCall(call: ActiveCall) {
         val url = sfuUrl ?: throw IllegalStateException("SFU not available")
         if (sfu == null) {
-            sfu = SfuMediaEngine(
-                context = context,
-                sfuUrl = url,
-                userId = userId,
-                authToken = token,
-                sendSignaling = { type, payload -> signaling.send(type, payload) },
-                onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
-                onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
-                onAudioLevels = { levels -> listener?.onAudioLevels(levels) },
-                onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) },
-                onWarning = { message -> listener?.onError(message) }
-            )
+            sfu = newSfuEngine(url)
         }
         val sfuRoomId = "${call.roomId}-call-${call.callId}"
         sfu?.joinRoom(
@@ -639,6 +804,19 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
             )
         )
     }
+
+    private fun newSfuEngine(url: String) = SfuMediaEngine(
+        context = context,
+        sfuUrl = url,
+        userId = userId,
+        authToken = token,
+        sendSignaling = { type, payload -> signaling.send(type, payload) },
+        onRemoteVideo = { track -> listener?.onRemoteVideo(track) },
+        onParticipant = { user, joined -> roomId?.let { listener?.onMediaParticipant(it, user, joined) } },
+        onAudioLevels = { levels -> listener?.onAudioLevels(levels) },
+        onRemoteScreen = { user, active -> listener?.onScreenShare(user, active) },
+        onWarning = { message -> listener?.onError(message) }
+    )
 
     private fun ensureP2p(video: Boolean) {
         WebRtcPeerFactory.warmUp(context)
@@ -656,10 +834,17 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
                 it.onDiagnostics = { message -> listener?.onDiagnostics(message) }
                 it.onConnectionState = { state ->
                     activeCall?.let { call ->
-                        if (state == "failed") {
-                            endCall()
-                            listener?.onError("Media connection failed. Try another network.")
-                        } else emitCallState(state, call.peerUserId, call.roomId, call.callId, call.callType)
+                        when (state) {
+                            "failed" -> recoverP2pMedia(call)
+                            "connected" -> {
+                                callLive = true
+                                mediaRecoveryDeadline?.let { d -> mainHandler.removeCallbacks(d) }
+                                mediaRecoveryDeadline = null
+                                emitCallState(state, call.peerUserId, call.roomId, call.callId, call.callType)
+                            }
+                            "reconnecting" -> if (callLive) emitCallState(state, call.peerUserId, call.roomId, call.callId, call.callType)
+                            else -> emitCallState(state, call.peerUserId, call.roomId, call.callId, call.callType)
+                        }
                     }
                 }
                 it.onError = { message ->
@@ -696,6 +881,9 @@ class RTCExpress(private val context: Context) : SignalingClient.Listener {
         p2p?.destroy()
         p2p = null
         activeCall = null
+        callLive = false
+        mediaRecoveryDeadline?.let { mainHandler.removeCallbacks(it) }
+        mediaRecoveryDeadline = null
         if (!inVoiceRoom && !inVideoRoom) resetMediaState() // the next call starts with mic and camera on
         stopOngoingIfIdle()
     }

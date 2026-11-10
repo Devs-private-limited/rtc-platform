@@ -8,9 +8,10 @@ import okhttp3.WebSocketListener
 import org.json.JSONObject
 
 class SignalingClient(
-    // Ping every 15 s: a dead connection (Wi-Fi lost) is noticed in seconds, so the call ends cleanly.
+    // Ping every 5 s: a dead connection (Wi-Fi lost) is noticed within seconds, so the SDK can
+    // reconnect and keep the call going.
     private val http: OkHttpClient = OkHttpClient.Builder()
-        .pingInterval(15, java.util.concurrent.TimeUnit.SECONDS)
+        .pingInterval(5, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 ) {
     interface Listener {
@@ -34,19 +35,36 @@ class SignalingClient(
         fun onMediaParticipant(payload: JSONObject, joined: Boolean) {}
         /** Someone else muted their mic / turned their camera off (or back on). */
         fun onMediaState(payload: JSONObject) {}
+        /** Someone in the call / group call lost their network (true) or is back (false). */
+        fun onPeerReconnect(payload: JSONObject, reconnecting: Boolean) {}
+        /**
+         * From the server's "connected" message, just before onConnected: the 1:1 call this user is
+         * still in ([callId], null = none) and whether rooms/group media were kept ([resumed]).
+         * [known] = false for older servers that don't send this.
+         */
+        fun onSessionInfo(callId: String?, resumed: Boolean, known: Boolean) {}
         fun onError(message: String, code: String? = null)
     }
 
     private var socket: WebSocket? = null
     var listener: Listener? = null
+    /** The server refused the token (4001/4002): reconnecting with it can never work. */
+    @Volatile var tokenRejected = false
+        private set
 
     fun connect(serverUrl: String, token: String) {
         val wsBase = serverUrl.trimEnd('/').replace("^http".toRegex(), "ws")
         val request = Request.Builder()
             .url("$wsBase/ws?token=${java.net.URLEncoder.encode(token, Charsets.UTF_8.name())}")
             .build()
+        tokenRejected = false
+        socket?.cancel()
         socket = http.newWebSocket(request, object : WebSocketListener() {
+            // Events from an older socket (replaced by a reconnect) are ignored.
+            private fun current(webSocket: WebSocket) = webSocket === socket
+
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (!current(webSocket)) return
                 // An error while handling one message must not close the connection
                 // (OkHttp drops the socket if this callback throws).
                 try {
@@ -58,7 +76,8 @@ class SignalingClient(
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 // 4001/4002: the server rejected the token (missing, invalid or expired).
-                if (code == 4001 || code == 4002) {
+                if (current(webSocket) && (code == 4001 || code == 4002)) {
+                    tokenRejected = true
                     listener?.onError(
                         "Invalid or expired token. Get a new token from your backend and call init() again.",
                         "invalid_token"
@@ -68,11 +87,15 @@ class SignalingClient(
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (!current(webSocket)) return
+                socket = null
                 listener?.onDisconnected()
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                listener?.onError(t.message ?: "WebSocket failed")
+                if (!current(webSocket)) return
+                socket = null
+                listener?.onError(t.message ?: "WebSocket failed", "connection_failed")
                 listener?.onDisconnected()
             }
         })
@@ -84,15 +107,25 @@ class SignalingClient(
     }
 
     fun close() {
-        socket?.close(1000, "bye")
+        val ws = socket
         socket = null
+        ws?.close(1000, "bye")
     }
 
     private fun handleMessage(message: JSONObject) {
         val type = message.getString("type")
         val payload = message.optJSONObject("payload") ?: JSONObject()
         when (type) {
-            "connected" -> listener?.onConnected(payload.optString("userId"))
+            "connected" -> {
+                listener?.onSessionInfo(
+                    if (payload.isNull("callId")) null else payload.optString("callId"),
+                    payload.optBoolean("resumed"),
+                    payload.has("callId")
+                )
+                listener?.onConnected(payload.optString("userId"))
+            }
+            "peer_reconnecting" -> listener?.onPeerReconnect(payload, true)
+            "peer_reconnected" -> listener?.onPeerReconnect(payload, false)
             "room_joined" -> {
                 val members = mutableListOf<String>()
                 val arr = payload.optJSONArray("members")

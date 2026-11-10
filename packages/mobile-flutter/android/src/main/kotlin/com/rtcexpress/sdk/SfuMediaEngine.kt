@@ -55,6 +55,8 @@ class SfuMediaEngine(
     private var videoCapturer: VideoCapturer? = null
     private var micProducer: Producer? = null
     private var camProducer: Producer? = null
+    /** transportId -> mediasoup connection state ("new", "connected", "disconnected", "failed"...). */
+    private val transportStates = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val consumers = mutableMapOf<String, Consumer>()
     private val consumerUsers = mutableMapOf<String, String>() // producerId -> userId
     private val screenConsumers = mutableSetOf<String>() // producerIds that are shared screens
@@ -356,6 +358,53 @@ class SfuMediaEngine(
 
     fun getLocalVideoTrack(): VideoTrack? = videoTrack
 
+    /** False when the network path to the media server broke (e.g. Wi-Fi dropped): rejoin needed. */
+    fun isMediaHealthy(): Boolean =
+        transportStates.values.none { it == "failed" || it == "disconnected" || it == "closed" }
+
+    /** What this engine sends: (producerId, kind, source). Take it before destroy() when rejoining. */
+    fun snapshot(): SfuSnapshot = synchronized(lock) {
+        SfuSnapshot(
+            roomId,
+            joinOptions,
+            listOfNotNull(
+                micProducer?.let { Triple(it.id, "audio", "microphone") },
+                camProducer?.let { Triple(it.id, "video", "camera") },
+                screenProducer?.let { Triple(it.id, "video", "screen") }
+            )
+        )
+    }
+
+    /**
+     * After rejoining: tell the server and the others that our OLD media is gone so they drop their
+     * frozen copies. Call after joinRoom(), so they already show the new media. Blocking (HTTP).
+     */
+    fun closeOldProducers(old: SfuSnapshot) {
+        val room = old.roomId ?: return
+        old.producers.forEach { (producerId, kind, source) ->
+            runCatching {
+                postJson(
+                    "${sfuUrl.trimEnd('/')}/v1/rooms/${encode(room)}/producers/$producerId/close",
+                    JSONObject().put("peerId", userId)
+                )
+            }
+            runCatching {
+                sendSignaling(
+                    "sfu_producer_closed",
+                    JSONObject()
+                        .put("roomId", room)
+                        .put("producerId", producerId)
+                        .put("kind", kind)
+                        .put("source", source)
+                        .apply {
+                            old.options.targetUserId?.let { put("toUserId", it) }
+                            old.options.callId?.let { put("callId", it) }
+                        }
+                )
+            }
+        }
+    }
+
     fun destroy() {
         levelTimer?.cancel()
         levelTimer = null
@@ -376,6 +425,7 @@ class SfuMediaEngine(
         recvTransport?.close()
         sendTransport = null
         recvTransport = null
+        transportStates.clear()
         device?.dispose()
         device = null
         CallVideoTracks.update(true, null)
@@ -414,7 +464,7 @@ class SfuMediaEngine(
                     )
                 }
 
-                override fun onConnectionStateChange(transport: Transport, connectionState: String) {}
+                override fun onConnectionStateChange(transport: Transport, connectionState: String) { transportStates[transport.id] = connectionState }
 
                 override fun onProduce(
                     transport: Transport,
@@ -478,7 +528,7 @@ class SfuMediaEngine(
                     )
                 }
 
-                override fun onConnectionStateChange(transport: Transport, connectionState: String) {}
+                override fun onConnectionStateChange(transport: Transport, connectionState: String) { transportStates[transport.id] = connectionState }
             },
             info.getString("id"),
             info.getJSONObject("iceParameters").toString(),
@@ -617,6 +667,14 @@ class SfuMediaEngine(
 
     private fun encode(value: String) = java.net.URLEncoder.encode(value, Charsets.UTF_8.name())
 }
+
+/** What an SFU engine was sending, used to rejoin after a network drop. */
+data class SfuSnapshot(
+    val roomId: String?,
+    val options: SfuJoinOptions,
+    /** (producerId, kind, source) */
+    val producers: List<Triple<String, String, String>>
+)
 
 data class SfuJoinOptions(
     val audio: Boolean = true,

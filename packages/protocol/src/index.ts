@@ -45,6 +45,8 @@ export type ServerMessageType =
   | "user_muted"
   | "media_state"
   | "cloud_recording_state"
+  | "peer_reconnecting"
+  | "peer_reconnected"
   | "error";
 
 /** Group media a participant can be in. Mirrors joinVoiceRoom / joinVideoRoom. */
@@ -66,6 +68,8 @@ export type CallState =
   | "ringing"
   | "connecting"
   | "connected"
+  /** The network dropped mid-call (yours or the other person's); trying to get it back (~30 s). */
+  | "reconnecting"
   | "ended"
   | "rejected";
 
@@ -111,6 +115,18 @@ export interface MuteRemotePayload {
  * "I muted my mic / turned my camera off" (client → server), relayed to everyone else in the room
  * with userId added (server → client), so the others can show "muted" / "camera off".
  */
+/**
+ * Server → client: someone in your call or group call lost their connection and is trying to
+ * come back (`peer_reconnecting`), or is back (`peer_reconnected`). If they are not back within
+ * about 30 s the call ends as usual (call_end / media_participant_left).
+ */
+export interface PeerReconnectPayload {
+  userId: string;
+  roomId: string;
+  /** Set for a 1:1 call. */
+  callId?: string;
+}
+
 export interface MediaStatePayload {
   roomId: string;
   audioMuted: boolean;

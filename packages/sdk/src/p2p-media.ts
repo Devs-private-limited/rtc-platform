@@ -110,6 +110,22 @@ export class P2pMediaEngine {
     });
   }
 
+  /** True while audio/video can flow (false after a network drop until ICE restarts). */
+  isConnected() {
+    return this.peerConnection?.connectionState === "connected";
+  }
+
+  /** After a network change: find a new network path without ending the call. */
+  async restartIce(peerUserId: string, callId: string) {
+    if (!this.peerConnection) return;
+    const offer = await this.peerConnection.createOffer({ iceRestart: true });
+    await this.peerConnection.setLocalDescription(offer);
+    this.send({
+      type: "webrtc_offer",
+      payload: { callId, fromUserId: this.userId, toUserId: peerUserId, sdp: offer },
+    });
+  }
+
   async handleOffer(payload: WebRtcPayload) {
     if (!payload.sdp) return;
     await this.prepare(false);

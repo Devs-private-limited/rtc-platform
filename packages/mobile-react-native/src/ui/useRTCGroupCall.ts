@@ -12,6 +12,8 @@ export interface RTCGroupCall {
   /** Other people in the call (you are not in this list). */
   participants: string[];
   joinedAt?: number;
+  /** This phone lost its network; the SDK is reconnecting (~30 s) and the call carries on when it is back. */
+  reconnecting?: boolean;
 }
 
 export interface RTCGroupCallController {
@@ -22,6 +24,8 @@ export interface RTCGroupCallController {
   mutedPeople: string[];
   /** Others who turned their camera off. */
   cameraOffPeople: string[];
+  /** Others whose network dropped; they are reconnecting (~30 s). */
+  reconnectingPeople: string[];
   muted: boolean;
   cameraOff: boolean;
   /** Last error, e.g. "Group video calls are not included in your current plan". Cleared on the next join. */
@@ -64,6 +68,7 @@ export function useRTCGroupCall(
   const [screenSharers, setScreenSharers] = useState<string[]>([]);
   const [mutedPeople, setMutedPeople] = useState<string[]>([]);
   const [cameraOffPeople, setCameraOffPeople] = useState<string[]>([]);
+  const [reconnectingPeople, setReconnectingPeople] = useState<string[]>([]);
   const ref = useRef<RTCGroupCall | null>(null);
   const lastLoud = useRef<Record<string, number>>({});
 
@@ -80,6 +85,7 @@ export function useRTCGroupCall(
     setScreenSharers([]);
     setMutedPeople([]);
     setCameraOffPeople([]);
+    setReconnectingPeople([]);
     setSpeaking([]);
     setMuted(false);
     setCameraOff(false);
@@ -117,6 +123,7 @@ export function useRTCGroupCall(
           setScreenSharers((cur) => cur.filter((u) => u !== p.userId));
           setMutedPeople((cur) => cur.filter((u) => u !== p.userId));
           setCameraOffPeople((cur) => cur.filter((u) => u !== p.userId));
+          setReconnectingPeople((cur) => cur.filter((u) => u !== p.userId));
         }
       }),
       client.on("remoteMediaState", (p: any) => {
@@ -154,11 +161,22 @@ export function useRTCGroupCall(
           leave();
         }
       }),
+      client.on("peerReconnecting", (p: any) => {
+        if (!ref.current || !p?.userId || p.userId === userId) return;
+        setReconnectingPeople((cur) => [...cur.filter((u) => u !== p.userId), ...(p.reconnecting ? [p.userId as string] : [])]);
+      }),
+      // In a group call the SDK reconnects by itself; it sends groupMedia joined=false if it gives up.
       client.on("disconnected", () => {
-        if (ref.current) {
+        const g = ref.current;
+        if (!g) return;
+        if (g.phase === "connected") update((cur) => (cur ? { ...cur, reconnecting: true } : cur));
+        else {
           setError("Connection lost");
           reset();
         }
+      }),
+      client.on("connected", () => {
+        if (ref.current?.reconnecting) update((cur) => (cur ? { ...cur, reconnecting: false } : cur));
       }),
     ];
     return () => offs.forEach((off) => off());
@@ -213,5 +231,5 @@ export function useRTCGroupCall(
 
   const canShareScreen = Platform.OS === "android";
 
-  return { groupCall, speaking, mutedPeople, cameraOffPeople, muted, cameraOff, error, minimized, minimize, restore, sharingScreen, screenSharers, toggleScreenShare, canShareScreen, join, leave, toggleMute, toggleCamera, switchCamera };
+  return { groupCall, speaking, mutedPeople, cameraOffPeople, reconnectingPeople, muted, cameraOff, error, minimized, minimize, restore, sharingScreen, screenSharers, toggleScreenShare, canShareScreen, join, leave, toggleMute, toggleCamera, switchCamera };
 }

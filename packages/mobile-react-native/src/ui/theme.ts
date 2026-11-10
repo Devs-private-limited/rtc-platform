@@ -30,6 +30,8 @@ export interface RTCCallLabels {
   incomingVideo: string;
   ringing: string;
   connecting: string;
+  /** The network dropped mid-call (either side); the call carries on when it comes back. */
+  reconnecting: string;
   voiceCall: string;
   videoCall: string;
   speaking: string;
@@ -67,6 +69,7 @@ export const defaultCallLabels: RTCCallLabels = {
   incomingVideo: "Incoming video call",
   ringing: "Ringing…",
   connecting: "Connecting…",
+  reconnecting: "Reconnecting…",
   voiceCall: "Voice call",
   videoCall: "Video call",
   speaking: "speaking",
