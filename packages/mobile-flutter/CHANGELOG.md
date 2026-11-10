@@ -1,3 +1,7 @@
+## 0.1.5
+
+- Android: ready for Google Play's 16 KB page size rule (Android 15+). The media library is now `com.devsquarelabs:mediasoup-client-android:3.4.0.1`, rebuilt with 16 KB pages; nothing changes in your code.
+
 ## 0.1.4
 
 - New `remoteMediaState` event (`{roomId, userId, audioMuted, videoOff}`): show "muted" / "camera off" for the other people in a call or group. Your own `muteMicrophone` / `muteCamera` are sent to them automatically.
