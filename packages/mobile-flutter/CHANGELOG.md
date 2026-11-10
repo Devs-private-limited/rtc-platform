@@ -1,3 +1,7 @@
+## 0.1.5
+
+- Android: the caller's call timer now starts when the other person answers, at the same time as theirs (previously "connecting" was sent twice on the answering side).
+
 ## 0.1.4
 
 - New `remoteMediaState` event (`{roomId, userId, audioMuted, videoOff}`): show "muted" / "camera off" for the other people in a call or group. Your own `muteMicrophone` / `muteCamera` are sent to them automatically.
