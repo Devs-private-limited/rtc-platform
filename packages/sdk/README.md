@@ -94,7 +94,8 @@ Returns `{ "token": "...", "expiresIn": 3600 }`.
 | `userLeft` | `{ roomId, userId }` |
 | `message` | `{ roomId, fromUserId, text, sentAt }` |
 | `callInvite` | `{ callId, fromUserId, toUserId, roomId }` |
-| `callState` | `{ callId, state, peerUserId, roomId, mediaMode? }` |
+| `callState` | `{ callId, state, peerUserId, roomId, mediaMode? }` (state `reconnecting` while your network is down mid-call, then `connected` again) |
+| `peerReconnecting` | `{ roomId, userId, callId?, reconnecting }`: the other person lost their network (true) or is back (false) |
 | `voiceRoomJoined` | `{ roomId, mediaMode }` |
 | `voiceRoomLeft` | `{ roomId }` |
 | `error` | `{ message }` |

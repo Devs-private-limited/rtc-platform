@@ -1,3 +1,8 @@
+## 0.1.6
+
+- Calls survive a short network drop (Wi-Fi off, switching networks): the call waits up to 30 s and continues when the network is back. Your side gets a `callState` event with `reconnecting`, the other side gets `peerReconnecting` (`{roomId, userId, reconnecting}`) so you can show "Reconnecting…". If the network doesn't come back within 30 s, the call ends on both sides.
+- Android: fixed a crash when the video connection was rebuilt after a network drop.
+
 ## 0.1.5
 
 - Android: ready for Google Play's 16 KB page size rule (Android 15+). The media library is now `com.devsquarelabs:mediasoup-client-android:3.4.0.1`, rebuilt with 16 KB pages; nothing changes in your code.
