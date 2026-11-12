@@ -406,6 +406,8 @@ class SfuMediaEngine(
     }
 
     fun destroy() {
+        // Views must let go of our tracks before they are disposed below (native crash otherwise).
+        CallVideoTracks.detachAllNow()
         levelTimer?.cancel()
         levelTimer = null
         synchronized(lock) {

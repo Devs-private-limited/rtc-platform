@@ -41,6 +41,27 @@ object CallVideoTracks {
         if (track != null) screens[userId] = track
         views.filter { it.screen }.forEach { it.bind(trackFor(it)) }
     }
+    /**
+     * Detach every view from its track NOW (waits for the main thread). Call before disposing
+     * tracks: a view that still draws a disposed track crashes the app in native code
+     * (seen when the media connection was rebuilt after a network drop).
+     */
+    fun detachAllNow() {
+        val work = Runnable {
+            local = null
+            remote = null
+            users.clear()
+            screens.clear()
+            views.forEach { it.bind(null) }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            work.run()
+            return
+        }
+        val done = java.util.concurrent.CountDownLatch(1)
+        main.post { try { work.run() } finally { done.countDown() } }
+        done.await(2, java.util.concurrent.TimeUnit.SECONDS)
+    }
     fun clearUsers() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             main.post { clearUsers() }
