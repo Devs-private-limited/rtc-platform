@@ -1,8 +1,8 @@
 name: rtcexpress
 description: Add voice calls, video calls and in-app chat to Flutter apps with RTCExpress. Hosted signaling, TURN and SFU. Android supported, iOS experimental.
-version: 0.1.6
+version: 0.1.7
 homepage: https://rtc.devsquarelabs.com
-repository: https://github.com/Devs-private-limited/rtcexpress-guides
+repository: https://github.com/Devs-private-limited/rtc-platform/tree/main/packages/mobile-flutter
 issue_tracker: https://github.com/Devs-private-limited/rtcexpress-guides/issues
 documentation: https://rtc.devsquarelabs.com/docs
 topics:

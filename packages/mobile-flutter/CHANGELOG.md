@@ -1,3 +1,7 @@
+## 0.1.7
+
+- Docs only: API documentation comments for every public class and method, and the repository link now points to the package source. No code changes.
+
 ## 0.1.6
 
 - Calls survive a short network drop (Wi-Fi off, switching networks): the call waits up to 30 s and continues when the network is back. Your side gets a `callState` event with `reconnecting`, the other side gets `peerReconnecting` (`{roomId, userId, reconnecting}`) so you can show "Reconnecting…". If the network doesn't come back within 30 s, the call ends on both sides.
