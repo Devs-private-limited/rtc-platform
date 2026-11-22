@@ -32,6 +32,20 @@ export async function requestAccountLink(email: string, purpose: "verify" | "res
   }
 }
 
+export const VERIFY_RESEND_COOLDOWN_SEC = 120;
+
+/** Seconds until another verification email may be sent (0 = now). Links last 30 minutes, so a link
+ * created less than 2 minutes ago still has more than 28 minutes left. */
+export async function secondsUntilNextVerifyEmail(accountId: string) {
+  const db = getPool(); if (!db) return 0;
+  const r = await db.query(
+    `SELECT CEIL(EXTRACT(EPOCH FROM (MAX(expires_at) - INTERVAL '30 minutes' + make_interval(secs => $2) - NOW())))::int AS wait
+     FROM account_tokens WHERE account_id = $1 AND purpose = 'verify'`,
+    [accountId, VERIFY_RESEND_COOLDOWN_SEC]
+  );
+  return Math.max(0, Number(r.rows[0]?.wait) || 0);
+}
+
 const escHtml = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 
 // Branded HTML email (table layout + inline styles so Gmail/Outlook show it the same way).
