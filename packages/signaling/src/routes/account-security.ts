@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { emailConfigured, requestAccountLink, consumeAccountLink, changeAccountSecurity } from "../account-security.js";
+import { emailConfigured, requestAccountLink, consumeAccountLink, changeAccountSecurity, secondsUntilNextVerifyEmail } from "../account-security.js";
 import { requirePortalUser } from "../portal-auth.js";
 import { rateLimit } from "../rate-limit.js";
 import { isValidEmail } from "../leads.js";
@@ -37,6 +37,13 @@ export async function registerAccountSecurityRoutes(app: FastifyInstance, secret
     if (!customer) return reply.status(404).send({ error: "Account not found" });
     if (customer.emailVerified) return { verified: true, message: "Your email is already verified." };
     if (!emailConfigured()) return reply.status(503).send({ error: "Email sending is not set up yet. Contact support." });
+    // One verification email per 2 minutes: a second click (or double click) doesn't send another email,
+    // it tells them the first one is on its way. Checked in the database, so it holds across server instances.
+    const waitSec = await secondsUntilNextVerifyEmail(customer.id);
+    if (waitSec > 0) {
+      reply.header("Retry-After", String(waitSec));
+      return { verified: false, alreadySent: true, retryAfterSeconds: waitSec, message: `We already sent a verification email to ${customer.email}. It can take a minute to arrive, so check your inbox and spam folder. You can ask for a new one in ${waitSec} seconds.` };
+    }
     if (!rateLimit(`verify-send:${claims.appId}`, 3, 900000)) return reply.status(429).send({ error: "Email already sent. Check your inbox and spam folder, or try again in 15 minutes." });
     try { await requestAccountLink(customer.email, "verify"); }
     catch { req.log.error("Verification email failed; check provider configuration"); return reply.status(502).send({ error: "Could not send the email right now. Try again in a few minutes." }); }
