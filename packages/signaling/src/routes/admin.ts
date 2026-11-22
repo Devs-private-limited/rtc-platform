@@ -83,7 +83,7 @@ export function requireAdmin(req: FastifyRequest, reply: FastifyReply, need?: Ad
 }
 
 const AUDIT_PAGE_SIZE = 20;
-const AUDIT_KINDS = ["all", "plan", "minutes", "account", "team", "summary"];
+const AUDIT_KINDS = ["all", "plan", "minutes", "account", "team", "summary", "email"];
 
 export async function audit(actor: string, action: string, target: string | null, detail: Record<string, unknown> = {}) {
   const db = getPool();

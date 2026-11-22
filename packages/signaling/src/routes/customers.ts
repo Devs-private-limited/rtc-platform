@@ -70,7 +70,7 @@ export async function registerCustomerRoutes(app:FastifyInstance,secret:string) 
     const {accountId}=req.params,page=Number(req.query.page || 1);
     if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(accountId) || !Number.isInteger(page) || page<1 || page>100000)return reply.code(400).send({error:'Invalid customer or page'});
     const db=getPool();if(!db)return reply.code(503).send({error:'Database unavailable'});
-    const account=await db.query(`SELECT c.id,c.name,c.email,c.company,c.app_id,c.created_at,c.email_verified_at,c.signup_ip,c.signup_user_agent,c.signup_source,a.name project_name,a.plan,a.active,a.billing_period,a.subscription_status,a.subscription_renews_at,a.subscription_cancel_at_period_end,a.dodo_subscription_id,${usageColumns}
+    const account=await db.query(`SELECT c.id,c.name,c.email,c.company,c.app_id,c.created_at,c.email_verified_at,c.welcome_email_sent_at,c.signup_ip,c.signup_user_agent,c.signup_source,a.name project_name,a.plan,a.active,a.billing_period,a.subscription_status,a.subscription_renews_at,a.subscription_cancel_at_period_end,a.dodo_subscription_id,${usageColumns}
       FROM customer_accounts c JOIN apps a ON a.app_id=c.app_id ${usageJoin} WHERE c.id=$1`,[accountId]);
     if(!account.rows.length)return reply.code(404).send({error:'Customer not found'});
     const appId=account.rows[0].app_id;

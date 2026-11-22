@@ -136,6 +136,7 @@ export async function renderCustomerDetail(view: HTMLElement, id: string) {
         ${field('Company (at sign-up)', esc(c.company))}${field('Project name', esc(c.project_name))}${field('App ID', `<code>${esc(c.app_id)}</code>`)}
         ${field('Plan', planBadge(c.plan))}${field('Subscription', subscriptionText(c))}${field('Dodo subscription ID', esc(c.dodo_subscription_id))}
         ${field('Account', c.active ? '<span class="pill good">Active</span>' : '<span class="pill bad">Disabled</span>')}${field('Signed up', when(c.created_at))}
+        ${field('Welcome email', `${c.welcome_email_sent_at ? `<span class="pill good">Sent</span> ${when(c.welcome_email_sent_at)}` : '<span class="pill warn">Not sent</span>'}${canEdit() ? ` <button type="button" class="secondary small" id="send-welcome">${c.welcome_email_sent_at ? 'Send again' : 'Send welcome email'}</button>` : ''}`)}
       </dl></section>` +
       `<section class="panel"><h2>Where this sign-up came from</h2>${sourceKnown
         ? `<dl class="facts">
@@ -220,6 +221,13 @@ function accessCard(c: any, data: any) {
 
 function wireManage(view: HTMLElement, c: any) {
   const reload = () => void renderCustomerDetail(view, c.id);
+  const welcome = view.querySelector<HTMLButtonElement>('#send-welcome');
+  if (welcome) welcome.onclick = async () => {
+    if (!confirm(`Send the welcome email to ${c.email}${c.welcome_email_sent_at ? ' again' : ''}? It uses the text on the Emails page.`)) return;
+    welcome.disabled = true;
+    try { await adminFetch(`/v1/admin/customers/${c.id}/welcome-email`, { method: 'POST' }); flash = `Welcome email sent to ${esc(c.email)}.`; reload(); }
+    catch (err) { alert(err instanceof Error ? err.message : 'Could not send'); welcome.disabled = false; }
+  };
   const block = view.querySelector<HTMLFormElement>('#m-block'), del = view.querySelector<HTMLFormElement>('#m-delete');
   if (block) block.onsubmit = async (e) => {
     e.preventDefault();

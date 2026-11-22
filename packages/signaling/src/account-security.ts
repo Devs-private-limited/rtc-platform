@@ -76,9 +76,9 @@ export async function consumeAccountLink(token: string, purpose: "verify" | "res
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    const found = await client.query(`SELECT t.account_id, ca.app_id FROM account_tokens t JOIN customer_accounts ca ON ca.id = t.account_id WHERE t.token_hash = $1 AND t.purpose = $2 AND t.expires_at > NOW() FOR UPDATE OF t, ca`, [tokenHash(token), purpose]);
+    const found = await client.query(`SELECT t.account_id, ca.app_id, ca.email_verified_at FROM account_tokens t JOIN customer_accounts ca ON ca.id = t.account_id WHERE t.token_hash = $1 AND t.purpose = $2 AND t.expires_at > NOW() FOR UPDATE OF t, ca`, [tokenHash(token), purpose]);
     if (!found.rowCount) throw new Error("Invalid or expired link");
-    const { account_id, app_id } = found.rows[0];
+    const { account_id, app_id, email_verified_at } = found.rows[0];
     if (purpose === "verify") await client.query(`UPDATE customer_accounts SET email_verified_at = COALESCE(email_verified_at, NOW()) WHERE id = $1`, [account_id]);
     else {
       await client.query(`UPDATE customer_accounts SET password_hash = $1 WHERE id = $2`, [await bcrypt.hash(password!, 12), account_id]);
@@ -86,6 +86,8 @@ export async function consumeAccountLink(token: string, purpose: "verify" | "res
     }
     await client.query(`DELETE FROM account_tokens WHERE account_id = $1 AND purpose = $2`, [account_id, purpose]);
     await client.query("COMMIT");
+    // firstVerify: this link verified the email for the first time (the caller then sends the welcome email).
+    return { accountId: String(account_id), firstVerify: purpose === "verify" && !email_verified_at };
   } catch (error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
 }
