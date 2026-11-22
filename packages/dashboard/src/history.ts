@@ -17,12 +17,15 @@ function describe(e: any, d: any) {
     case 'summary.send': return `Sent the weekly summary email (${esc(d.result)})`;
     case 'account.block': return `<strong>Blocked</strong> ${esc(d.email)}. Reason: ${esc(d.reason)}`;
     case 'account.unblock': return `Unblocked ${esc(d.email)}. Reason: ${esc(d.reason)}`;
+    case 'email.welcome.update': return d.enabled === d.wasEnabled ? `Edited the <strong>welcome email</strong>${d.textChanged ? '' : ' (no text changes)'}` : `Turned the <strong>welcome email ${d.enabled ? 'on' : 'off'}</strong>${d.textChanged ? ' and edited its text' : ''}`;
+    case 'email.welcome.reset': return 'Put the <strong>welcome email</strong> back to the built-in text';
+    case 'email.welcome.send': return `Sent the <strong>welcome email</strong> to ${esc(d.email)}${d.result === 'sent' ? '' : ` <span class="pill bad">${esc(d.result)}</span>`}`;
     case 'account.delete': return `<strong>Deleted</strong> the account ${esc(d.email)}. Reason: ${esc(d.reason)}`;
     default: return esc(e.action);
   }
 }
 
-const KINDS: [string, string][] = [['all', 'All changes'], ['plan', 'Plan changes'], ['minutes', 'Extra minutes'], ['account', 'Block / unblock / delete'], ['team', 'Admin team'], ['summary', 'Summary emails']];
+const KINDS: [string, string][] = [['all', 'All changes'], ['plan', 'Plan changes'], ['minutes', 'Extra minutes'], ['account', 'Block / unblock / delete'], ['team', 'Admin team'], ['summary', 'Summary emails'], ['email', 'Customer emails']];
 const state = { q: '', kind: 'all', page: 1 };
 
 export async function renderHistoryPage(view: HTMLElement) {

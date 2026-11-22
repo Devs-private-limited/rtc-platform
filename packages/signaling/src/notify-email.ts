@@ -3,11 +3,11 @@
 // (and the admin panel) can show it.
 export type EmailResult = "sent" | "not-configured" | "failed";
 
-const escHtml = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+export const escHtml = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 const configured = () => Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
-const website = () => (process.env.PUBLIC_WEBSITE_URL || "https://rtc.devsquarelabs.com").replace(/\/+$/, "");
+export const website = () => (process.env.PUBLIC_WEBSITE_URL || "https://rtc.devsquarelabs.com").replace(/\/+$/, "");
 
-async function send(to: string[], subject: string, text: string, html?: string, replyTo?: string): Promise<EmailResult> {
+export async function send(to: string[], subject: string, text: string, html?: string, replyTo?: string): Promise<EmailResult> {
   if (!configured() || !to.length) return "not-configured";
   try {
     const res = await fetch("https://api.resend.com/emails", {
@@ -23,7 +23,7 @@ async function send(to: string[], subject: string, text: string, html?: string, 
 }
 
 // Same look as the verify/reset emails: logo, white card, one teal button.
-function branded(title: string, paragraphs: string[], button?: { text: string; href: string }) {
+export function branded(title: string, paragraphs: string[], button?: { text: string; href: string }) {
   const site = escHtml(website());
   const font = "font-family:Inter,Segoe UI,Helvetica,Arial,sans-serif;";
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(title)}</title></head>

@@ -4,6 +4,7 @@ import { requirePortalUser } from "../portal-auth.js";
 import { rateLimit } from "../rate-limit.js";
 import { isValidEmail } from "../leads.js";
 import { getCustomerByAppId } from "../customers.js";
+import { sendWelcomeEmail } from "../welcome-email.js";
 
 export async function registerAccountSecurityRoutes(app: FastifyInstance, secret: string) {
   app.post<{ Body: { email?: string; purpose?: string } }>("/v1/auth/email-link", async (req, reply) => {
@@ -22,7 +23,12 @@ export async function registerAccountSecurityRoutes(app: FastifyInstance, secret
     if (!rateLimit(`consume:${req.ip}`, 20, 900000)) return reply.status(429).send({ error: "Too many attempts" });
     const { token, purpose, password } = req.body || {};
     if (typeof token !== "string" || (purpose !== "verify" && purpose !== "reset")) return reply.status(400).send({ error: "Invalid link" });
-    try { await consumeAccountLink(token, purpose, password); return { message: purpose === "verify" ? "Email verified." : "Password reset. Sign in with your new password." }; }
+    try {
+      const used = await consumeAccountLink(token, purpose, password);
+      // Welcome email (text set in the admin panel). In the background: verifying never waits for or fails on it.
+      if (used.firstVerify) void sendWelcomeEmail(used.accountId, "auto").then((r) => { if (r === "failed") req.log.warn("Welcome email could not be sent"); });
+      return { message: purpose === "verify" ? "Email verified." : "Password reset. Sign in with your new password." };
+    }
     catch (error) { return reply.status(400).send({ error: error instanceof Error ? error.message : "Unable to use link" }); }
   });
   app.post("/v1/portal/send-verification", async (req, reply) => {

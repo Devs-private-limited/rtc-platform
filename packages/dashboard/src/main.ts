@@ -6,6 +6,7 @@ import { renderOverviewPage } from './overview';
 import { renderPaymentsPage } from './payments';
 import { renderPlansPage } from './plans';
 import { renderTeamPage } from './team';
+import { renderEmailsPage } from './emails';
 import { renderHistoryPage } from './history';
 import { me, ROLE_NAMES } from './me';
 import { adminFetch } from './api';
@@ -491,6 +492,7 @@ const NAV = [
   ["payments", "Payments"],
   ["enquiries", "Enquiries"],
   ["plans", "Plans & prices"],
+  ["emails", "Emails"],
   ["team", "Admin team"],
   ["history", "Change history"],
   ["projects", "Projects (dev tools)"],
@@ -531,6 +533,7 @@ function route() {
   if (section === "payments") return void renderPaymentsPage(view);
   if (section === "enquiries") return renderEnquiries(view);
   if (section === "plans") return void renderPlansPage(view);
+  if (section === "emails") return void renderEmailsPage(view);
   if (section === "team") return void renderTeamPage(view);
   if (section === "history") return void renderHistoryPage(view);
   if (section === "projects") { selectedApp = null; return void renderHome(); }
